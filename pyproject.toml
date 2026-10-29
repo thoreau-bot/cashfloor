@@ -7,14 +7,13 @@ name = "cashfloor"
 version = "0.1.0"
 description = "Local-only personal cash-flow floor: statement archiving, daily balance projection, and a live 'how much can I spend' number."
 readme = "README.md"
-license = { text = "MIT" }
+license = "MIT"
 requires-python = ">=3.11"
 authors = [{ name = "ThoreauBot" }]
 keywords = ["finance", "budget", "cash-flow", "simplefin", "statements", "local-first"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: Web Environment",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Topic :: Office/Business :: Financial :: Accounting",
 ]
@@ -24,7 +23,7 @@ dependencies = [
     "pydantic>=2.7",
     "python-dateutil>=2.9",
     "fastapi>=0.111",
-    "uvicorn[standard]>=0.30",
+    "uvicorn>=0.30",
     "jinja2>=3.1",
     "python-multipart>=0.0.9",
     "apscheduler>=3.10,<4",

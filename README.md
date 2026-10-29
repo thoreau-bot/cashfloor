@@ -34,7 +34,7 @@ get those from parsed statements (scraped or dropped) or from a manual entry.
 ```bash
 git clone <this repo> && cd cashfloor
 python -m venv .venv && . .venv/bin/activate      # Windows: .venv\Scripts\activate
-pip install -e ".[dev]"                             # add  ,scrape  for Playwright
+pip install -e ".[dev]"                             # add  ,scrape  for Playwright (then: playwright install chromium)
 cashfloor init                                      # writes config.toml
 cashfloor simplefin setup <SETUP_TOKEN>             # token from bridge.simplefin.org
 cashfloor sync
