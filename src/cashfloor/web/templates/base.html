@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>cashfloor</title>
+<style>
+  :root { --bg:#0f1115; --panel:#171a21; --line:#2a2f3a; --fg:#e6e8ee; --dim:#8b93a7; --good:#3ddc97; --bad:#ff6b6b; --warn:#ffc857; --accent:#6ea8fe; }
+  @media (prefers-color-scheme: light) { :root { --bg:#f6f7fa; --panel:#fff; --line:#dde1ea; --fg:#13161c; --dim:#5b6475; } }
+  * { box-sizing:border-box }
+  body { margin:0; font:15px/1.45 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background:var(--bg); color:var(--fg) }
+  header { display:flex; gap:20px; align-items:center; padding:12px 24px; border-bottom:1px solid var(--line); background:var(--panel) }
+  header a { color:var(--dim); text-decoration:none } header a.active, header a:hover { color:var(--fg) }
+  header .brand { font-weight:700; color:var(--fg); letter-spacing:.3px }
+  main { max-width:1100px; margin:0 auto; padding:20px 24px }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:14px; margin-bottom:18px }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:14px 16px }
+  .card h3 { margin:0 0 6px; font-size:12px; text-transform:uppercase; letter-spacing:.08em; color:var(--dim) }
+  .big { font-size:30px; font-weight:700; font-variant-numeric:tabular-nums }
+  .good { color:var(--good) } .bad { color:var(--bad) } .warn { color:var(--warn) }
+  table { width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums }
+  th, td { text-align:left; padding:7px 8px; border-bottom:1px solid var(--line); vertical-align:top }
+  th { color:var(--dim); font-weight:600; font-size:12px; text-transform:uppercase; letter-spacing:.05em }
+  td.num, th.num { text-align:right }
+  .chart { width:100%; height:auto; display:block }
+  .chart .grid { stroke:var(--line); stroke-width:1 } .chart .tick { fill:var(--dim); font-size:11px }
+  .chart .line { fill:none; stroke:var(--accent); stroke-width:2 } .chart .area { fill:var(--accent); opacity:.12 }
+  .chart .buffer { stroke:var(--warn); stroke-dasharray:4 4 } .chart .zero { stroke:var(--bad); stroke-dasharray:2 4 }
+  .chart .floor { fill:var(--bad) }
+  button, .btn { background:var(--accent); color:#000; border:0; border-radius:6px; padding:6px 12px; font-weight:600; cursor:pointer }
+  button.secondary { background:var(--line); color:var(--fg) }
+  form.inline { display:inline }
+  input, select { background:var(--bg); color:var(--fg); border:1px solid var(--line); border-radius:6px; padding:5px 7px; font:inherit }
+  .muted { color:var(--dim) } .small { font-size:12px }
+  h2 { font-size:17px; margin:22px 0 10px }
+</style>
+</head>
+<body>
+<header>
+  <span class="brand">cashfloor</span>
+  <a href="/" class="{{ 'active' if request.url.path == '/' else '' }}">Dashboard</a>
+  <a href="/accounts" class="{{ 'active' if request.url.path.startswith('/accounts') else '' }}">Accounts</a>
+  <a href="/items" class="{{ 'active' if request.url.path.startswith('/items') else '' }}">Scheduled</a>
+  <a href="/statements" class="{{ 'active' if request.url.path.startswith('/statements') else '' }}">Statements</a>
+  <span style="flex:1"></span>
+  <form method="post" action="/sync" class="inline"><button>Sync now</button></form>
+</header>
+<main>{% block body %}{% endblock %}</main>
+</body>
+</html>

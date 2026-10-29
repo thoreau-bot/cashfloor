@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block body %}
+<div class="grid">
+  <div class="card">
+    <h3>Discretionary now</h3>
+    <div class="big {{ 'good' if p.discretionary >= 0 else 'bad' }}">{{ "{:,.2f}".format(p.discretionary) }}</div>
+    <div class="small muted">floor − buffer of {{ "{:,.0f}".format(p.safety_buffer) }}</div>
+  </div>
+  <div class="card">
+    <h3>Lowest balance ({{ p.horizon_days }}d)</h3>
+    <div class="big {{ 'bad' if p.floor < 0 else '' }}">{{ "{:,.2f}".format(p.floor) }}</div>
+    <div class="small muted">on {{ p.floor_date }}</div>
+  </div>
+  <div class="card">
+    <h3>Pool balance today</h3>
+    <div class="big">{{ "{:,.2f}".format(p.starting_balance) }}</div>
+    <div class="small muted">as of {{ p.as_of }}</div>
+  </div>
+  <div class="card">
+    <h3>Needs attention</h3>
+    <div class="big {{ 'warn' if p.unconfirmed_count else '' }}">{{ p.unconfirmed_count }}</div>
+    <div class="small muted"><a href="/items">detected items to confirm</a></div>
+  </div>
+</div>
+
+<div class="card">{{ chart | safe }}</div>
+
+<h2>Upcoming movements</h2>
+<div class="card">
+<table>
+  <tr><th>Date</th><th>Events</th><th class="num">End balance</th></tr>
+  {% for d in upcoming %}
+  <tr>
+    <td>{{ d.day }}</td>
+    <td>{% for e in d.events %}<div>{{ e }}</div>{% endfor %}</td>
+    <td class="num {{ 'bad' if d.balance < p.safety_buffer else '' }}">{{ "{:,.2f}".format(d.balance) }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="3" class="muted">No scheduled movements. Add paychecks and bills under <a href="/items">Scheduled</a>, or run a sync so the detector can propose them.</td></tr>
+  {% endfor %}
+</table>
+</div>
+
+<h2>Accounts</h2>
+<div class="card">
+<table>
+  <tr><th>Institution</th><th>Account</th><th>Type</th><th>Pool</th><th class="num">Balance</th><th>Due</th><th class="num">Stmt</th><th>Synced</th></tr>
+  {% for a in accounts %}
+  <tr>
+    <td>{{ a.institution }}</td><td>{{ a.display_name }}</td><td>{{ a.type.value }}</td><td>{{ '✓' if a.in_pool }}</td>
+    <td class="num">{{ a.balance | money }}</td><td>{{ a.due_date or '' }}</td><td class="num">{{ a.statement_balance | money }}</td>
+    <td class="small muted">{{ a.last_synced.strftime('%m-%d %H:%M') if a.last_synced else '' }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="8" class="muted">No accounts yet — run <code>cashfloor simplefin setup &lt;token&gt;</code> then <strong>Sync now</strong>.</td></tr>
+  {% endfor %}
+</table>
+</div>
+
+<h2>Recent syncs</h2>
+<div class="card small">
+  {% for s in syncs %}<div><span class="{{ 'good' if s['ok'] else 'bad' }}">●</span> {{ s['started_at'] }} {{ s['provider'] }} — {{ s['message'] or '' }}</div>{% else %}<span class="muted">none yet</span>{% endfor %}
+</div>
+{% endblock %}

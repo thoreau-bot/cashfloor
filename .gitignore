@@ -1,0 +1,36 @@
+# --- secrets & personal financial data: NEVER commit ---
+.env
+config.toml
+data/
+statements/
+inbox/
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+browser-profiles/
+*.pdf
+*.ofx
+*.qfx
+*.csv
+!tests/fixtures/**
+
+# --- python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# --- editors / os ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

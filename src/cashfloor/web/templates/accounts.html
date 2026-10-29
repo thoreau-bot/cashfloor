@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block body %}
+<h2>Accounts</h2>
+<p class="muted small">Give each account a short <em>key</em> (used in config and archive folder names), a type, and tick <em>pool</em> for the accounts you actually spend from. For cards/loans/utilities you can also set the next due date by hand if no statement has been parsed yet.</p>
+<div class="card">
+<table>
+  <tr><th>Institution / name</th><th>Key</th><th>Nickname</th><th>Type</th><th>Pool</th><th>Active</th><th class="num">Balance</th><th>Due date</th><th>Stmt bal</th><th>Min</th><th></th></tr>
+  {% for a in accounts %}
+  <tr>
+    <form method="post" action="/accounts/{{ a.id }}">
+    <td>{{ a.institution }}<br><span class="small muted">{{ a.name }} · {{ a.provider }}</span></td>
+    <td><input name="key" value="{{ a.key or '' }}" size="12"></td>
+    <td><input name="nickname" value="{{ a.nickname or '' }}" size="16"></td>
+    <td><select name="type">{% for t in types %}<option value="{{ t.value }}" {{ 'selected' if t == a.type }}>{{ t.value }}</option>{% endfor %}</select></td>
+    <td><input type="checkbox" name="in_pool" value="true" {{ 'checked' if a.in_pool }}></td>
+    <td><input type="checkbox" name="active" value="true" {{ 'checked' if a.active }}></td>
+    <td class="num">{{ a.balance | money }}</td>
+    <td><input type="date" name="due_date" value="{{ a.due_date or '' }}"></td>
+    <td><input name="statement_balance" value="{{ a.statement_balance | money }}" size="8"></td>
+    <td><input name="minimum_payment" value="{{ a.minimum_payment | money }}" size="6"></td>
+    <td><button>Save</button></td>
+    </form>
+  </tr>
+  {% endfor %}
+</table>
+</div>
+{% endblock %}

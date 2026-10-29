@@ -1,0 +1,67 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "cashfloor"
+version = "0.1.0"
+description = "Local-only personal cash-flow floor: statement archiving, daily balance projection, and a live 'how much can I spend' number."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.11"
+authors = [{ name = "ThoreauBot" }]
+keywords = ["finance", "budget", "cash-flow", "simplefin", "statements", "local-first"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Web Environment",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Office/Business :: Financial :: Accounting",
+]
+dependencies = [
+    "typer>=0.12",
+    "httpx>=0.27",
+    "pydantic>=2.7",
+    "python-dateutil>=2.9",
+    "fastapi>=0.111",
+    "uvicorn[standard]>=0.30",
+    "jinja2>=3.1",
+    "python-multipart>=0.0.9",
+    "apscheduler>=3.10,<4",
+    "pdfplumber>=0.11",
+    "keyring>=25",
+    "rich>=13",
+]
+
+[project.optional-dependencies]
+scrape = ["playwright>=1.45"]
+dev = ["pytest>=8", "pytest-cov", "ruff>=0.5", "mypy>=1.10"]
+
+[project.scripts]
+cashfloor = "cashfloor.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/cashfloor"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["B008"]  # typer.Option/Argument in defaults is the typer idiom
+
+[tool.ruff.lint.per-file-ignores]
+"src/cashfloor/db.py" = ["E702"]            # paired append statements read better on one line
+"src/cashfloor/statements/parser.py" = ["E501"]  # long regexes
+"src/cashfloor/web/app.py" = ["E501"]       # FastAPI Form() signatures
+"src/cashfloor/cli.py" = ["E501"]
+"tests/*" = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true

@@ -1,0 +1,87 @@
+# cashfloor configuration.  Copy to config.toml (git-ignored) and edit.
+# No secrets go in this file.  Secrets (SimpleFIN access URL, scraper
+# passwords) live in the OS keyring: `cashfloor secret set <name>`.
+
+[general]
+# Where the SQLite database and working files live.
+data_dir = "./data"
+# Where the organized statement archive is written.
+archive_dir = "./statements"
+# Watched folder: drop PDFs / OFX / CSV here and `cashfloor ingest` files them.
+inbox_dir = "./inbox"
+currency = "USD"
+# Local time zone for "today" and scheduling.
+timezone = "America/Los_Angeles"
+
+[projection]
+# Days to project forward.
+horizon_days = 90
+# Money you never want the floor to dip below.  Discretionary = floor - buffer.
+safety_buffer = 500.00
+# Which account types form the "cash pool" that the floor is computed over.
+pool_account_types = ["checking", "savings"]
+# When a credit-card statement is due, pay it from this account (by account key).
+default_payment_account = "main-checking"
+# Pay the full statement balance ("statement") or only the minimum ("minimum").
+card_payment_mode = "statement"
+# After the known due date, assume the same payment recurs monthly through the horizon.
+estimate_future_card_payments = true
+
+[recurring]
+# Minimum occurrences before a detected pattern is proposed as a scheduled item.
+min_occurrences = 3
+# Allowed drift, in days, between predicted and observed dates.
+date_tolerance_days = 3
+# Allowed variance in amount (fraction) for a series to count as the same bill.
+amount_tolerance = 0.15
+
+[scheduler]
+# Run the daily sync at this local time (24h).
+daily_sync_time = "06:30"
+
+[web]
+host = "127.0.0.1"
+port = 8477
+
+# ---------------------------------------------------------------------------
+# Providers.  Each [[provider]] block is one data source.  Accounts are
+# discovered from providers and stored in the DB; you then tag them with a
+# short "key" and a type via `cashfloor accounts` or the web UI.
+# ---------------------------------------------------------------------------
+
+[[provider]]
+name = "simplefin"
+kind = "simplefin"
+enabled = true
+# secret name in keyring holding the access URL (set with `cashfloor simplefin setup`)
+secret = "simplefin_access_url"
+lookback_days = 60
+
+[[provider]]
+name = "inbox"
+kind = "filedrop"
+enabled = true
+
+# Example Playwright scraper.  One block per institution; the `module` is a
+# plugin under src/cashfloor/providers/institutions/ (or an installed package
+# exposing the "cashfloor.institutions" entry point).
+# [[provider]]
+# name = "pge"
+# kind = "playwright"
+# module = "example_bank"
+# enabled = false
+# secret = "pge_login"          # keyring entry: JSON {"username": "...", "password": "..."}
+# headless = false              # keep false until the saved session survives MFA
+# statements_since = "2024-01-01"
+
+# ---------------------------------------------------------------------------
+# Account overrides: map provider account ids to a key / type / nickname.
+# The web UI writes these for you; listed here so the file is self-documenting.
+# ---------------------------------------------------------------------------
+# [[account]]
+# key = "main-checking"
+# provider = "simplefin"
+# external_id = "ACT-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+# type = "checking"
+# nickname = "Chase Checking"
+# in_pool = true

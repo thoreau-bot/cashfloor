@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block body %}
+<h2>Scheduled inflows &amp; outflows</h2>
+<p class="muted small">Amounts are signed from the account's point of view: a paycheck into checking is <strong>+</strong>, rent is <strong>−</strong>. Detected items (source <em>detected</em>) are excluded from the projection until confirmed.</p>
+<div class="card">
+<table>
+  <tr><th>Name</th><th>Account</th><th class="num">Amount</th><th>Freq</th><th>Next</th><th>Source</th><th>Conf</th><th>Status</th><th></th></tr>
+  {% for i in items %}
+  <tr class="{{ 'muted' if not i.active }}">
+    <td>{{ i.name }}<br><span class="small muted">{{ i.notes }}</span></td>
+    <td>{{ accts[i.account_id].display_name if i.account_id in accts else '?' }}{% if i.counter_account_id %} → {{ accts[i.counter_account_id].display_name if i.counter_account_id in accts else '?' }}{% endif %}</td>
+    <td class="num {{ 'good' if i.amount > 0 else 'bad' }}">{{ i.amount | money }}</td>
+    <td>{{ i.frequency.value }}</td><td>{{ i.next_date }}</td><td>{{ i.source.value }}</td><td>{{ '%.2f' % i.confidence }}</td>
+    <td>{% if not i.active %}inactive{% elif not i.confirmed %}<span class="warn">unconfirmed</span>{% else %}active{% endif %}</td>
+    <td style="white-space:nowrap">
+      {% if not i.confirmed %}<form class="inline" method="post" action="/items/{{ i.id }}/confirm"><button>Confirm</button></form>
+      <form class="inline" method="post" action="/items/{{ i.id }}/dismiss"><button class="secondary">Dismiss</button></form>{% endif %}
+      {% if not i.active %}<form class="inline" method="post" action="/items/{{ i.id }}/activate"><button class="secondary">Activate</button></form>{% endif %}
+      <form class="inline" method="post" action="/items/{{ i.id }}/delete"><button class="secondary">Delete</button></form>
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+</div>
+
+<h2>Add an item</h2>
+<div class="card">
+<form method="post" action="/items/add">
+  <input name="name" placeholder="Name (e.g. Paycheck)" required>
+  <select name="account_id">{% for id, a in accts.items() %}<option value="{{ id }}">{{ a.institution }} · {{ a.display_name }}</option>{% endfor %}</select>
+  <input name="amount" placeholder="Amount (+in / −out)" required size="12">
+  <select name="frequency">{% for f in freqs %}<option value="{{ f.value }}">{{ f.value }}</option>{% endfor %}</select>
+  <input type="date" name="next_date" required>
+  <select name="counter_account_id"><option value="">(not a transfer)</option>{% for id, a in accts.items() %}<option value="{{ id }}">→ {{ a.display_name }}</option>{% endfor %}</select>
+  <select name="weekend_rule"><option value="none">weekend: as-is</option><option value="previous">weekend: previous biz day</option><option value="next">weekend: next biz day</option></select>
+  <button>Add</button>
+</form>
+</div>
+{% endblock %}
