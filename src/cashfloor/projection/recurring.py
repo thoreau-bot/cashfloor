@@ -12,6 +12,7 @@ from __future__ import annotations
 import re
 import statistics
 from collections import defaultdict
+from dataclasses import dataclass
 from datetime import date, timedelta
 
 from ..config import Config
@@ -25,38 +26,68 @@ NOISE = re.compile(
 )
 
 
+GENERIC_LEAD = re.compile(
+    r"^\s*(ach (withdrawal|dep(osit)?|credit|debit)|debit card purchase|atm (withdrawal|rebate)|usaa (debit|credit)|"
+    r"pos (purchase|debit)|online (transfer|payment)|recurring|electronic|withdrawal|deposit)\b[\s\d]*",
+    re.I,
+)
+
+
 def normalize_payee(p: str) -> str:
+    p = GENERIC_LEAD.sub("", p or "")
     s = NOISE.sub(" ", p.lower())
     s = re.sub(r"[^a-z&' ]+", " ", s)
     s = re.sub(r"\s+", " ", s).strip()
     return " ".join(s.split()[:3])  # first three words carry the identity
 
 
-def classify_interval(gaps: list[int], days: list[date]) -> Frequency | None:
+RECENT_N = 14  # classify on the most recent occurrences; ancient irregularities don't matter
+
+CYCLES = [  # (frequency, min median gap, max median gap, day tolerance)
+    (Frequency.WEEKLY, 6, 8, 1),
+    (Frequency.BIWEEKLY, 13, 16, 2),
+    (Frequency.MONTHLY, 27, 33, 4),
+    (Frequency.QUARTERLY, 85, 95, 7),
+    (Frequency.SEMIANNUAL, 175, 190, 10),
+    (Frequency.YEARLY, 355, 375, 14),
+]
+
+
+def classify_interval(gaps: list[int], days: list[date], min_regular: float = 0.7) -> Frequency | None:
+    """Frequency from the median gap, accepted when at least `min_regular` of
+    the gaps fall within the cycle's tolerance of the median.  Robust to a
+    skipped month or a doubled payment years ago, unlike a std-dev test."""
     if not gaps:
         return None
     med = statistics.median(gaps)
-    spread = statistics.pstdev(gaps) if len(gaps) > 1 else 0
-    if 6 <= med <= 8 and spread <= 1.5:
-        return Frequency.WEEKLY
-    if 13 <= med <= 16 and spread <= 2.5:
-        # biweekly vs semimonthly: semimonthly hits ~two fixed days of month
-        doms = {d.day for d in days}
-        if len(doms) <= 3 and all(any(abs(x - y) <= 1 for y in doms) for x in doms):
-            return Frequency.SEMIMONTHLY
-        return Frequency.BIWEEKLY
-    if 27 <= med <= 32 and spread <= 4:
-        return Frequency.MONTHLY
-    if 85 <= med <= 95 and spread <= 7:
-        return Frequency.QUARTERLY
-    if 175 <= med <= 190 and spread <= 10:
-        return Frequency.SEMIANNUAL
-    if 355 <= med <= 375 and spread <= 12:
-        return Frequency.YEARLY
+    for freq, lo, hi, tol in CYCLES:
+        if lo <= med <= hi:
+            regular = sum(abs(g - med) <= tol for g in gaps) / len(gaps)
+            if regular < min_regular:
+                return None
+            if freq == Frequency.BIWEEKLY:
+                doms = {d.day for d in days}
+                if len(doms) <= 3 and all(any(abs(x - y) <= 1 for y in doms) for x in doms):
+                    return Frequency.SEMIMONTHLY
+            return freq
     return None
 
 
-def detect_recurring(cfg: Config, txs: list[Transaction], today: date | None = None) -> list[ScheduledItem]:
+@dataclass
+class Candidate:
+    account_id: int
+    pattern: str
+    count: int
+    frequency: Frequency | None
+    last: date | None
+    latest_amount: int
+    verdict: str  # "proposed" or the rejection reason
+    proposal: ScheduledItem | None = None
+
+
+def analyse_recurring(cfg: Config, txs: list[Transaction], today: date | None = None) -> list[Candidate]:
+    """Every candidate series with its verdict — what `detect_recurring` is
+    built on, exposed so you can see why something was or wasn't proposed."""
     today = today or date.today()
     rc = cfg.recurring
     groups: dict[tuple[int, str, int], list[Transaction]] = defaultdict(list)
@@ -68,38 +99,48 @@ def detect_recurring(cfg: Config, txs: list[Transaction], today: date | None = N
             continue
         groups[key].append(t)
 
-    proposals: list[ScheduledItem] = []
+    out: list[Candidate] = []
     for (account_id, pattern, _sign), g in groups.items():
-        if len(g) < min(rc.min_occurrences, 2):
-            continue
         g.sort(key=lambda t: t.posted)
-        # de-dupe same-day duplicates (split charges)
         dedup: list[Transaction] = []
         for t in g:
             if dedup and (t.posted - dedup[-1].posted).days < 3:
                 continue
             dedup.append(t)
-        dates = [t.posted for t in dedup]
+        cand = Candidate(account_id, pattern, len(dedup), None, dedup[-1].posted if dedup else None,
+                         abs(dedup[-1].amount) if dedup else 0, "")
+        out.append(cand)
+        if len(dedup) < 2:
+            cand.verdict = "only one occurrence"
+            continue
+        recent = dedup[-RECENT_N:]
+        dates = [t.posted for t in recent]
         gaps = [(b - a).days for a, b in zip(dates, dates[1:], strict=False)]
         freq = classify_interval(gaps, dates)
+        cand.frequency = freq
         if freq is None:
+            cand.verdict = f"irregular (median gap {statistics.median(gaps):.0f}d)"
             continue
-        # Long cycles (quarterly/yearly) would otherwise need years of history to qualify.
         needed = 2 if freq in (Frequency.QUARTERLY, Frequency.SEMIANNUAL, Frequency.YEARLY) else rc.min_occurrences
         if len(dedup) < needed:
+            cand.verdict = f"only {len(dedup)} occurrences, need {needed}"
             continue
-        amounts = [abs(t.amount) for t in dedup]
-        latest_amt = amounts[-1]  # the most recent amount wins (rate changes)
+        amounts = [abs(t.amount) for t in recent]
+        latest_amt = amounts[-1]
         if latest_amt == 0:
+            cand.verdict = "zero amount"
             continue
-        recent = amounts[-min(needed, len(amounts)):]
-        if any(abs(a - latest_amt) / latest_amt > rc.amount_tolerance for a in recent):
+        check = amounts[-min(needed, len(amounts)):]
+        if any(abs(a - latest_amt) / latest_amt > rc.amount_tolerance for a in check):
+            cand.verdict = "amounts vary too much"
             continue
         last = dates[-1]
-        if (today - last).days > 2 * max(gaps):
-            continue  # series appears to have stopped
-        regularity = 1.0 - min(statistics.pstdev(gaps) / max(statistics.median(gaps), 1), 1.0)
-        confidence = round(min(0.5 + 0.1 * len(dedup), 0.9) * (0.6 + 0.4 * regularity), 2)
+        med = statistics.median(gaps)
+        if (today - last).days > 2 * med + 7:
+            cand.verdict = f"stopped (last {last}, expected every {med:.0f}d)"
+            continue
+        regular = sum(abs(gp - med) <= 4 for gp in gaps) / len(gaps)
+        confidence = round(min(0.5 + 0.05 * len(dedup), 0.9) * (0.6 + 0.4 * regular), 2)
         seed = ScheduledItem(
             id=None,
             name=_title(dedup[-1].payee or pattern),
@@ -111,14 +152,19 @@ def detect_recurring(cfg: Config, txs: list[Transaction], today: date | None = N
             confidence=confidence,
             confirmed=False,
             payee_pattern=pattern,
-            notes=f"detected from {len(dedup)} transactions; last on {last}",
+            notes=f"detected from {len(dedup)} transactions since {dedup[0].posted}; last on {last}",
         )
         nd = advance_past(seed, today)
-        if nd == last:  # last occurrence is today or later; next is one step on
+        if nd == last:
             nd = advance_past(seed, last + timedelta(days=1))
         seed.next_date = nd
-        proposals.append(seed)
-    return proposals
+        cand.proposal = seed
+        cand.verdict = "proposed"
+    return out
+
+
+def detect_recurring(cfg: Config, txs: list[Transaction], today: date | None = None) -> list[ScheduledItem]:
+    return [c.proposal for c in analyse_recurring(cfg, txs, today) if c.proposal is not None]
 
 
 def _title(s: str) -> str:

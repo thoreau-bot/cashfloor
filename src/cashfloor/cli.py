@@ -223,6 +223,34 @@ def items_list(pending: bool = typer.Option(False, help="Only unconfirmed propos
     rprint(t)
 
 
+@items_app.command("detect")
+def items_detect(
+    min_count: int = typer.Option(3, help="Only show series with at least this many occurrences"),
+    rejected: bool = typer.Option(True, "--rejected/--proposed-only"),
+) -> None:
+    """Show every recurring-series candidate and why it was proposed or rejected."""
+    from .projection.recurring import analyse_recurring
+
+    db = _db()
+    try:
+        cfg = _state["cfg"]
+        today = date.today()
+        txs = db.list_transactions(since=today.replace(year=today.year - 3))
+        accts = {a.id: a for a in db.list_accounts(active_only=False)}
+        cands = analyse_recurring(cfg, txs, today)
+    finally:
+        db.close()
+    t = Table("account", "payee pattern", "n", "freq", "last", "latest amt", "verdict")
+    for c in sorted(cands, key=lambda c: (-c.count, c.pattern)):
+        if c.count < min_count or (not rejected and c.verdict != "proposed"):
+            continue
+        style = "green" if c.verdict == "proposed" else "yellow"
+        t.add_row(accts[c.account_id].display_name if c.account_id in accts else "?", c.pattern, str(c.count),
+                  c.frequency.value if c.frequency else "", c.last.isoformat() if c.last else "",
+                  f"{from_cents(c.latest_amount):,.2f}", f"[{style}]{c.verdict}[/{style}]")
+    rprint(t)
+
+
 @items_app.command("add")
 def items_add(
     name: str, account_id: int, amount: float, frequency: str, next_date: str,
