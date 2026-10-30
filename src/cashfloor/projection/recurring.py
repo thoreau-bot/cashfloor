@@ -83,6 +83,26 @@ def is_p2p(pattern: str) -> bool:
     return bool(P2P_RE.match(pattern or ""))
 
 
+def monthly_aggregate(txs: list[Transaction], today: date) -> tuple[int, int, int, float] | None:
+    """For series that don't fit a clean cadence: if most of the last 12
+    months contain at least one payment, return (median monthly total in
+    cents, typical day of month, active months, payments per month)."""
+    if not txs or (today - txs[-1].posted).days > 45:
+        return None
+    start = (today.replace(day=1) - timedelta(days=365)).replace(day=1)
+    buckets: dict[tuple[int, int], list[Transaction]] = defaultdict(list)
+    for t in txs:
+        if t.posted >= start:
+            buckets[(t.posted.year, t.posted.month)].append(t)
+    months = len(buckets)
+    if months < 8:
+        return None
+    totals = [sum(abs(t.amount) for t in v) for v in buckets.values()]
+    first_days = [min(t.posted.day for t in v) for v in buckets.values()]
+    per_month = sum(len(v) for v in buckets.values()) / months
+    return int(statistics.median(totals)), int(statistics.median(first_days)), months, per_month
+
+
 def merge_truncated_names(groups: dict) -> dict:
     """Statements truncate descriptions ("ACME WIDGETS INC") while live feeds
     spell them out ("ACME WIDGETS INCORPORATED"): fold a series into another in the
@@ -167,7 +187,27 @@ def analyse_recurring(
         freq = classify_interval(gaps, dates)
         cand.frequency = freq
         if freq is None:
-            cand.verdict = f"irregular (median gap {statistics.median(gaps):.0f}d)"
+            agg = monthly_aggregate(dedup, today)
+            if agg is None:
+                cand.verdict = f"irregular (median gap {statistics.median(gaps):.0f}d)"
+                continue
+            # Paid in several pieces most months (card payments, split rent):
+            # treat as one monthly bill of the typical monthly total.
+            amount, day, months, per_month = agg
+            cand.frequency = Frequency.MONTHLY
+            anchor = dedup[-1].posted.replace(day=min(day, 28))
+            seed = ScheduledItem(
+                id=None, name=_title(dedup[-1].payee or pattern), account_id=account_id,
+                amount=amount * (1 if dedup[-1].amount > 0 else -1), frequency=Frequency.MONTHLY,
+                next_date=anchor, source=ItemSource.DETECTED, confidence=round(0.5 + 0.02 * months, 2),
+                confirmed=False, payee_pattern=pattern,
+                notes=(f"monthly total across {months} of the last 12 months (~{per_month:.1f} payments/month); "
+                       f"variable amount; median monthly total used"),
+            )
+            nd = advance_past(seed, today)
+            seed.next_date = nd if nd > today else advance_past(seed, today + timedelta(days=1))
+            cand.proposal = seed
+            cand.verdict = "proposed (monthly total)"
             continue
         needed = 2 if freq in (Frequency.QUARTERLY, Frequency.SEMIANNUAL, Frequency.YEARLY) else rc.min_occurrences
         if len(dedup) < needed:

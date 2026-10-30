@@ -60,6 +60,24 @@ def test_truncated_statement_name_merges_with_live_feed_name():
     assert "21 transactions" in found[0].notes
 
 
+def test_card_paid_in_pieces_becomes_monthly_total():
+    from dateutil.relativedelta import relativedelta
+
+    days = [(5, 23), (7,), (12, 28), (3,), (9, 17), (6,), (4, 26), (8,), (11, 21), (5,), (14, 27), (6,), (3, 19)]
+    txs, i = [], 0
+    m = date(2025, 10, 1)
+    for ds in days:  # one or two payments a month on scattered days
+        for k, d in enumerate(ds):
+            txs.append(_tx(f"c{i}", m.replace(day=d), -40_000 if k == 0 else -25_000, "CAPITAL ONE CRCARDPMT"))
+            i += 1
+        m += relativedelta(months=1)
+    found = {it.payee_pattern: it for it in detect_recurring(Config(), txs, TODAY)}
+    cap = found["capital one crcardpmt"]
+    assert cap.frequency == Frequency.MONTHLY and "monthly total" in cap.notes
+    assert cap.amount in (-40_000, -65_000)  # median of the monthly totals
+    assert cap.next_date > TODAY
+
+
 def test_accent_folding_merges_series():
     assert normalize_payee("ACMÉ WIDGETS INC PAYROLL") == normalize_payee("ACME WIDGETS INC PAYROLL")
 
