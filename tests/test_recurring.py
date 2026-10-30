@@ -52,6 +52,14 @@ def test_variable_amount_bill_is_proposed_with_median_and_dead_series_is_not():
     assert rent.amount == -int(statistics.median(amts[-6:]))
 
 
+def test_truncated_statement_name_merges_with_live_feed_name():
+    txs = [_tx(f"s{i}", date(2026, 1, 9) + timedelta(days=14 * i), 300_000, "ACME WIDGETS INC PAYROLL") for i in range(18)]
+    txs += [_tx(f"l{i}", date(2026, 1, 9) + timedelta(days=14 * (18 + i)), 300_000, "Acme Widgets Incorporated") for i in range(3)]
+    found = detect_recurring(Config(), txs, TODAY)
+    assert len(found) == 1 and found[0].frequency == Frequency.BIWEEKLY
+    assert "21 transactions" in found[0].notes
+
+
 def test_accent_folding_merges_series():
     assert normalize_payee("ACMÉ WIDGETS INC PAYROLL") == normalize_payee("ACME WIDGETS INC PAYROLL")
 

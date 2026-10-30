@@ -111,7 +111,7 @@ PAYROLL
     assert r.skipped_rows == 1 and len(r.transactions) == 1 and r.transactions[0].amount == 500
 
 
-def test_filing_a_bank_statement_imports_history_below_live_cutoff(cfg, db, tmp_path):
+def test_filing_a_bank_statement_dedupes_against_live_feed_one_to_one(cfg, db, tmp_path):
     from datetime import UTC, datetime
 
     from cashfloor.models import Account, AccountType, Transaction
@@ -120,19 +120,23 @@ def test_filing_a_bank_statement_imports_history_below_live_cutoff(cfg, db, tmp_
     a = db.upsert_account(Account(id=None, provider="simplefin", external_id="c", name="USAA CLASSIC CHECKING",
                                   institution="USAA", type=AccountType.CHECKING, last4="4471",
                                   balance_as_of=datetime(2026, 10, 29, tzinfo=UTC)))
-    # live feed already covers 2026-09-20 onwards
-    db.upsert_transactions([Transaction(id=None, account_id=a.id, external_id="ACT-1", posted=date(2026, 9, 20),
-                                        amount=-1, payee="x")])
+    # live feed (SimpleFIN wording) already has three of them, incl. ONE of the two $50 PayPal rows
+    db.upsert_transactions([
+        Transaction(id=None, account_id=a.id, external_id="ACT-1", posted=date(2026, 9, 21), amount=-36_595, payee="Citi Card Online Payment"),
+        Transaction(id=None, account_id=a.id, external_id="ACT-2", posted=date(2026, 9, 15), amount=-5000, payee="PayPal"),
+        Transaction(id=None, account_id=a.id, external_id="ACT-3", posted=date(2026, 10, 1), amount=50_000, payee="Zelle payment"),
+    ])
     src = tmp_path / "inbox" / "chk.pdf"
     src.write_bytes(b"%PDF-1.4 chk")
     st = ingest_statement_file(cfg, db, src, text=USAA_TEXT)
     assert st.account_id == a.id
     imported = [t for t in db.list_transactions(a.id) if t.external_id.startswith("stmt:")]
-    # 9 parsed; those on/after 09-20 (09-21, 09-22, 09-24, 10-01) are excluded
-    assert len(imported) == 5
-    assert max(t.posted for t in imported) < date(2026, 9, 20)
+    # 9 parsed; 3 matched live rows skipped; the second $50 PayPal row is kept
+    assert len(imported) == 6
+    assert sum(1 for t in imported if t.amount == -5000) == 1
+    assert not any(t.amount == -36_595 for t in imported)
     assert {t.payee for t in imported} >= {"ACME WIDGETS INC PAYROLL", "PAYPAL TRANSFER"}
     # idempotent
     from cashfloor.statements.organizer import import_statement_transactions
-    assert import_statement_transactions(db, st, a, USAA_TEXT) == 0 or True
-    assert len([t for t in db.list_transactions(a.id) if t.external_id.startswith("stmt:")]) == 5
+    import_statement_transactions(db, st, a, USAA_TEXT)
+    assert len([t for t in db.list_transactions(a.id) if t.external_id.startswith("stmt:")]) == 6

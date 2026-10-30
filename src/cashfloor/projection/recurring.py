@@ -56,7 +56,7 @@ CYCLES = [  # (frequency, min median gap, max median gap, day tolerance)
 ]
 
 
-def classify_interval(gaps: list[int], days: list[date], min_regular: float = 0.7) -> Frequency | None:
+def classify_interval(gaps: list[int], days: list[date], min_regular: float = 0.6) -> Frequency | None:
     """Frequency from the median gap, accepted when at least `min_regular` of
     the gaps fall within the cycle's tolerance of the median.  Robust to a
     skipped month or a doubled payment years ago, unlike a std-dev test."""
@@ -74,6 +74,40 @@ def classify_interval(gaps: list[int], days: list[date], min_regular: float = 0.
                     return Frequency.SEMIMONTHLY
             return freq
     return None
+
+
+P2P_RE = re.compile(r"^(zelle|paypal|venmo|cash app|cashapp|apple cash)\b", re.I)
+
+
+def is_p2p(pattern: str) -> bool:
+    return bool(P2P_RE.match(pattern or ""))
+
+
+def merge_truncated_names(groups: dict) -> dict:
+    """Statements truncate descriptions ("ACME WIDGETS INC") while live feeds
+    spell them out ("ACME WIDGETS INCORPORATED"): fold a series into another in the
+    same account/sign whose key extends it."""
+    keys = list(groups)
+    alias: dict = {}
+    for k in keys:
+        acct, pat, sign = k
+        if len(pat) < 8:
+            continue
+        longer = [o for o in keys if o != k and o[0] == acct and o[2] == sign
+                  and o[1].startswith(pat) and len(o[1]) > len(pat)]
+        if longer:
+            alias[k] = max(longer, key=lambda o: len(groups[o]))  # fold into the biggest extension
+    merged: dict = {}
+    for k in keys:
+        target = k
+        seen = set()
+        while target in alias and target not in seen:  # follow chains
+            seen.add(target)
+            target = alias[target]
+        merged.setdefault(target, []).extend(groups[k])
+    for v in merged.values():
+        v.sort(key=lambda t: t.posted)
+    return merged
 
 
 @dataclass
@@ -102,6 +136,7 @@ def analyse_recurring(cfg: Config, txs: list[Transaction], today: date | None = 
             continue
         groups[key].append(t)
 
+    groups = merge_truncated_names(groups)
     out: list[Candidate] = []
     for (account_id, pattern, _sign), g in groups.items():
         g.sort(key=lambda t: t.posted)

@@ -227,9 +227,10 @@ def items_list(pending: bool = typer.Option(False, help="Only unconfirmed propos
 def items_detect(
     min_count: int = typer.Option(3, help="Only show series with at least this many occurrences"),
     rejected: bool = typer.Option(True, "--rejected/--proposed-only"),
+    redact: bool = typer.Option(False, help="Mask person-to-person counterparties (Zelle/PayPal/Venmo)"),
 ) -> None:
     """Show every recurring-series candidate and why it was proposed or rejected."""
-    from .projection.recurring import analyse_recurring
+    from .projection.recurring import analyse_recurring, is_p2p
 
     db = _db()
     try:
@@ -245,7 +246,8 @@ def items_detect(
         if c.count < min_count or (not rejected and not c.verdict.startswith("proposed")):
             continue
         style = "green" if c.verdict.startswith("proposed") else "yellow"
-        t.add_row(accts[c.account_id].display_name if c.account_id in accts else "?", c.pattern, str(c.count),
+        shown = (c.pattern.split()[0] + " (person)") if redact and is_p2p(c.pattern) else c.pattern
+        t.add_row(accts[c.account_id].display_name if c.account_id in accts else "?", shown, str(c.count),
                   c.frequency.value if c.frequency else "", c.last.isoformat() if c.last else "",
                   f"{from_cents(c.latest_amount):,.2f}", f"[{style}]{c.verdict}[/{style}]")
     rprint(t)
