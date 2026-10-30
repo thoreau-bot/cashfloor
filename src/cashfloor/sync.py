@@ -104,11 +104,23 @@ def run_sync(cfg: Config, db: Database, only: str | None = None, today: date | N
                     t.account_id = ext_to_id[ext]
                     txs.append(t)
             summary.transactions += db.upsert_transactions(txs)
-            for path in res.statement_files:
-                st = ingest_statement_file(cfg, db, path)
+            # File what this run produced, plus anything a previous run left behind.
+            leftovers = sorted((cfg.general.data_dir / "downloads" / pc.name).glob("*.pdf"))
+            pending_files = list(dict.fromkeys([*res.statement_files, *leftovers]))
+            file_errors = []
+            for path in pending_files:
+                if not path.exists():
+                    continue
+                try:
+                    st = ingest_statement_file(cfg, db, path)
+                except Exception as e:  # noqa: BLE001 — one bad PDF must not strand the rest
+                    file_errors.append(f"{path.name}: {e}")
+                    log.warning("filing %s failed: %s", path.name, e)
+                    continue
                 if st:
                     summary.statements += 1
                     summary.statements_review += int(st.needs_review)
+            res.errors.extend(file_errors)
             msg = f"{len(res.accounts)} accounts, {len(txs)} tx, {len(res.statement_files)} files"
             if res.errors:
                 msg += "; warnings: " + " | ".join(res.errors)

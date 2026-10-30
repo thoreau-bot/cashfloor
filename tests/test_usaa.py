@@ -30,8 +30,12 @@ def test_content_url_and_name():
     assert content_url(CID, date(2026, 10, 8)) == (
         "https://api.usaa.com/v1/enterprise/content-viewer/render/content/" + CID + "/display-dates/2026-10-08"
     )
-    n = safe_name({"day": date(2026, 10, 8), "title": "CHECKING STATEMENT", "account": "USAA CLASSIC CHECKING *4471"})
-    assert n == "2026-10-08_USAA_USAA-CLASSIC-CHECKING-4471_CHECKING-STATEMENT.pdf"
+    n = safe_name({"day": date(2026, 10, 8), "title": "CHECKING STATEMENT", "account": "USAA CLASSIC CHECKING *4471",
+                   "content_id": CID})
+    assert n == "2026-10-08_USAA_USAA-CLASSIC-CHECKING-4471_CHECKING-STATEMENT_3c1f0a52.pdf"
+    n2 = safe_name({"day": date(2026, 10, 8), "title": "CHECKING STATEMENT", "account": "USAA CLASSIC CHECKING *4471",
+                    "content_id": CID2})
+    assert n != n2
 
 
 class FakeResponse:
@@ -95,7 +99,7 @@ def test_download_flow_with_captured_auth(tmp_path: Path):
     page.handlers["response"](Resp())
 
     saved = s.download_all_statements(page, since=date(2026, 6, 1), dest=tmp_path)
-    assert [p.name for p in saved] == ["2026-10-08_USAA_4471_CHECKING-STATEMENT.pdf"]
+    assert [p.name for p in saved] == ["2026-10-08_USAA_4471_CHECKING-STATEMENT_3c1f0a52.pdf"]
     assert saved[0].read_bytes().startswith(b"%PDF")
     meta = json.loads(saved[0].with_name(saved[0].name + ".meta.json").read_text())
     assert meta == {"institution": "USAA", "title": "CHECKING STATEMENT", "account": "*4471",

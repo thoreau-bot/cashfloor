@@ -77,3 +77,19 @@ def test_run_sync_filedrop_end_to_end(cfg, db, monkeypatch):
     s = run_sync(cfg, db, today=date(2026, 10, 29))
     assert s.providers_ok == ["inbox"] and s.accounts == 1 and s.transactions == 2
     assert db.list_accounts()[0].balance == 198_750
+
+
+def test_sync_files_leftovers_and_survives_bad_pdf(cfg, db):
+    from cashfloor.config import ProviderConfig
+
+    cfg.provider = [ProviderConfig(name="inbox", kind="filedrop")]
+    left = cfg.general.data_dir / "downloads" / "inbox"
+    left.mkdir(parents=True)
+    (left / "stranded.pdf").write_bytes(b"%PDF-1.4 stranded")
+    (left / "stranded.pdf.meta.json").write_text('{"institution":"USAA","title":"CHECKING STATEMENT","date":"2026-01-08"}')
+    (left / "broken.pdf").write_bytes(b"not a pdf at all")
+    s = run_sync(cfg, db, today=date(2026, 10, 29))
+    assert s.providers_ok == ["inbox"]
+    titles = {st.title for st in db.list_statements()}
+    assert "CHECKING STATEMENT" in titles            # leftover was filed
+    assert not (left / "stranded.pdf").exists()

@@ -163,7 +163,8 @@ def content_url(cid: str, day: date) -> str:
 def safe_name(doc: dict) -> str:
     bits = [doc["day"].isoformat(), "USAA", doc.get("account", ""), doc.get("title", "")]
     segs = [re.sub(r"-{2,}", "-", re.sub(r"[^\w\-]+", "-", b.strip())).strip("-") for b in bits if b]
-    return "_".join(x for x in segs if x)[:140] + ".pdf"
+    # content-id suffix keeps two same-day, same-title documents from colliding
+    return "_".join(x for x in segs if x)[:130] + "_" + doc["content_id"][:8] + ".pdf"
 
 
 class Scraper(InstitutionScraper):
