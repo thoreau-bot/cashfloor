@@ -39,10 +39,21 @@ def test_detects_biweekly_paycheck_and_monthly_bill():
     assert nf.next_date == date(2026, 11, 12)
 
 
-def test_ignores_irregular_amounts_and_dead_series():
-    txs = [_tx(i, date(2026, 1, 1) + timedelta(days=30 * i), -(1000 + 900 * i), "GROCERY") for i in range(5)]
+def test_variable_amount_bill_is_proposed_with_median_and_dead_series_is_not():
+    amts = [200_000, 260_000, 205_000, 290_000, 210_000, 250_000, 215_000, 300_000, 220_000, 270_000]
+    txs = [_tx(i, date(2026, 1, 6) + timedelta(days=30 * i), -amts[i], "APPFOLIO INC F") for i in range(10)]
     txs += [_tx(f"d{i}", date(2025, 1, 10) + timedelta(days=30 * i), -5000, "OLD GYM") for i in range(6)]
-    assert detect_recurring(Config(), txs, TODAY) == []
+    txs += [_tx(f"n{i}", date(2026, 1, 7) + timedelta(days=30 * i), -5, "IOD INTEREST PAID") for i in range(10)]
+    found = {it.payee_pattern: it for it in detect_recurring(Config(), txs, TODAY)}
+    assert set(found) == {"appfolio inc f"}
+    rent = found["appfolio inc f"]
+    assert rent.frequency == Frequency.MONTHLY and "variable amount" in rent.notes
+    import statistics
+    assert rent.amount == -int(statistics.median(amts[-6:]))
+
+
+def test_accent_folding_merges_series():
+    assert normalize_payee("ACMÉ WIDGETS INC PAYROLL") == normalize_payee("ACME WIDGETS INC PAYROLL")
 
 
 def test_five_years_with_irregularities_still_proposes():

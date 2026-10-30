@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import re
 import statistics
+import unicodedata
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date, timedelta
@@ -34,7 +35,9 @@ GENERIC_LEAD = re.compile(
 
 
 def normalize_payee(p: str) -> str:
-    p = GENERIC_LEAD.sub("", p or "")
+    p = unicodedata.normalize("NFKD", p or "")
+    p = "".join(ch for ch in p if not unicodedata.combining(ch))  # CAFÉ -> CAFE
+    p = GENERIC_LEAD.sub("", p)
     s = NOISE.sub(" ", p.lower())
     s = re.sub(r"[^a-z&' ]+", " ", s)
     s = re.sub(r"\s+", " ", s).strip()
@@ -45,7 +48,7 @@ RECENT_N = 14  # classify on the most recent occurrences; ancient irregularities
 
 CYCLES = [  # (frequency, min median gap, max median gap, day tolerance)
     (Frequency.WEEKLY, 6, 8, 1),
-    (Frequency.BIWEEKLY, 13, 16, 2),
+    (Frequency.BIWEEKLY, 13, 16, 3),
     (Frequency.MONTHLY, 27, 33, 4),
     (Frequency.QUARTERLY, 85, 95, 7),
     (Frequency.SEMIANNUAL, 175, 190, 10),
@@ -127,12 +130,18 @@ def analyse_recurring(cfg: Config, txs: list[Transaction], today: date | None = 
             continue
         amounts = [abs(t.amount) for t in recent]
         latest_amt = amounts[-1]
-        if latest_amt == 0:
-            cand.verdict = "zero amount"
-            continue
         check = amounts[-min(needed, len(amounts)):]
-        if any(abs(a - latest_amt) / latest_amt > rc.amount_tolerance for a in check):
-            cand.verdict = "amounts vary too much"
+        variable = any(abs(a - latest_amt) / max(latest_amt, 1) > rc.amount_tolerance for a in check)
+        if variable:
+            # Stable cadence, moving amount (rent with fees, insurance, loan autopay,
+            # card autopay): still a bill.  Use the median of the last six.
+            use_amt = int(statistics.median(amounts[-6:]))
+            note = f"variable amount; median of last {min(6, len(amounts))} used"
+        else:
+            use_amt = int(latest_amt)
+            note = ""
+        if use_amt < 100:  # under $1: interest pennies, rounding — not a bill
+            cand.verdict = "negligible amount"
             continue
         last = dates[-1]
         med = statistics.median(gaps)
@@ -140,31 +149,36 @@ def analyse_recurring(cfg: Config, txs: list[Transaction], today: date | None = 
             cand.verdict = f"stopped (last {last}, expected every {med:.0f}d)"
             continue
         regular = sum(abs(gp - med) <= 4 for gp in gaps) / len(gaps)
-        confidence = round(min(0.5 + 0.05 * len(dedup), 0.9) * (0.6 + 0.4 * regular), 2)
+        confidence = round(min(0.5 + 0.05 * len(dedup), 0.9) * (0.6 + 0.4 * regular) * (0.85 if variable else 1.0), 2)
         seed = ScheduledItem(
             id=None,
             name=_title(dedup[-1].payee or pattern),
             account_id=account_id,
-            amount=int(latest_amt) * (1 if dedup[-1].amount > 0 else -1),
+            amount=use_amt * (1 if dedup[-1].amount > 0 else -1),
             frequency=freq,
             next_date=last,
             source=ItemSource.DETECTED,
             confidence=confidence,
             confirmed=False,
             payee_pattern=pattern,
-            notes=f"detected from {len(dedup)} transactions since {dedup[0].posted}; last on {last}",
+            notes=(f"detected from {len(dedup)} transactions since {dedup[0].posted}; last on {last}"
+                   + (f"; {note}" if note else "")),
         )
         nd = advance_past(seed, today)
         if nd == last:
             nd = advance_past(seed, last + timedelta(days=1))
         seed.next_date = nd
         cand.proposal = seed
-        cand.verdict = "proposed"
+        cand.verdict = "proposed (variable amount)" if variable else "proposed"
     return out
 
 
 def detect_recurring(cfg: Config, txs: list[Transaction], today: date | None = None) -> list[ScheduledItem]:
     return [c.proposal for c in analyse_recurring(cfg, txs, today) if c.proposal is not None]
+
+
+def is_proposed(verdict: str) -> bool:
+    return verdict.startswith("proposed")
 
 
 def _title(s: str) -> str:

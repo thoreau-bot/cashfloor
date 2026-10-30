@@ -64,6 +64,27 @@ def test_parse_usaa_rows_sign_from_balance():
     assert tx[8].balance_after == 385_111
 
 
+def test_wrapped_and_balance_only_rows_use_the_balance_chain():
+    text = """Statement Period: 09/05/2026 to 10/07/2026
+Date Description Debits Credits Balance
+09/05 Beginning Balance $1,000.00
+09/21 ACH WITHDRAWAL 092126 $365.95
+$634.05
+CITI AUTOPAY PAYMENT
+09/22 ACH WITHDRAWAL 092226 $584.05
+PAYPAL TRANSFER
+09/24 ACH DEP 092526 $3,000.00 $3,584.05
+PAYROLL
+"""
+    r = parse_transactions(text)
+    assert [(t.amount, t.balance_after) for t in r.transactions] == [
+        (-36_595, 63_405),      # balance wrapped onto its own line
+        (-5_000, 58_405),       # only the balance survived: amount = movement
+        (300_000, 358_405),
+    ]
+    assert r.transactions[0].payee == "CITI AUTOPAY PAYMENT"
+
+
 def test_year_boundary():
     text = """Statement Period: 12/08/2025 to 01/07/2026
 Date Description Debits Credits Balance

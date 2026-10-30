@@ -242,9 +242,9 @@ def items_detect(
         db.close()
     t = Table("account", "payee pattern", "n", "freq", "last", "latest amt", "verdict")
     for c in sorted(cands, key=lambda c: (-c.count, c.pattern)):
-        if c.count < min_count or (not rejected and c.verdict != "proposed"):
+        if c.count < min_count or (not rejected and not c.verdict.startswith("proposed")):
             continue
-        style = "green" if c.verdict == "proposed" else "yellow"
+        style = "green" if c.verdict.startswith("proposed") else "yellow"
         t.add_row(accts[c.account_id].display_name if c.account_id in accts else "?", c.pattern, str(c.count),
                   c.frequency.value if c.frequency else "", c.last.isoformat() if c.last else "",
                   f"{from_cents(c.latest_amount):,.2f}", f"[{style}]{c.verdict}[/{style}]")
