@@ -141,7 +141,8 @@ def run_sync(cfg: Config, db: Database, only: str | None = None, today: date | N
             db.save_item(it)
 
     # Propose recurring items (never overwrite confirmed ones).
-    proposals = detect_recurring(cfg, db.list_transactions(since=today.replace(year=today.year - 3)), today)
+    proposals = detect_recurring(cfg, db.list_transactions(since=today.replace(year=today.year - 3)), today,
+                                 db.get_payee_aliases())
     for p in proposals:
         existing = db.find_item_by_pattern(p.account_id, p.payee_pattern or "")
         if existing is None:

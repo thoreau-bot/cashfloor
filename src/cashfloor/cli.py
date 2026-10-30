@@ -238,7 +238,7 @@ def items_detect(
         today = date.today()
         txs = db.list_transactions(since=today.replace(year=today.year - 3))
         accts = {a.id: a for a in db.list_accounts(active_only=False)}
-        cands = analyse_recurring(cfg, txs, today)
+        cands = analyse_recurring(cfg, txs, today, db.get_payee_aliases())
     finally:
         db.close()
     t = Table("account", "payee pattern", "n", "freq", "last", "latest amt", "verdict")

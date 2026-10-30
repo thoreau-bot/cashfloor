@@ -122,16 +122,26 @@ class Candidate:
     proposal: ScheduledItem | None = None
 
 
-def analyse_recurring(cfg: Config, txs: list[Transaction], today: date | None = None) -> list[Candidate]:
+def analyse_recurring(
+    cfg: Config,
+    txs: list[Transaction],
+    today: date | None = None,
+    aliases: dict[tuple[int, str], str] | None = None,
+) -> list[Candidate]:
     """Every candidate series with its verdict — what `detect_recurring` is
-    built on, exposed so you can see why something was or wasn't proposed."""
+    built on, exposed so you can see why something was or wasn't proposed.
+    `aliases` maps (account_id, live-feed key) -> statement key, learned when
+    a statement row de-duplicates against a live row."""
     today = today or date.today()
     rc = cfg.recurring
+    aliases = aliases or {}
     groups: dict[tuple[int, str, int], list[Transaction]] = defaultdict(list)
     for t in txs:
         if t.pending or t.amount == 0:
             continue
-        key = (t.account_id, normalize_payee(t.payee or t.memo), 1 if t.amount > 0 else -1)
+        pat = normalize_payee(t.payee or t.memo)
+        pat = aliases.get((t.account_id, pat), pat)
+        key = (t.account_id, pat, 1 if t.amount > 0 else -1)
         if not key[1]:
             continue
         groups[key].append(t)
@@ -208,8 +218,10 @@ def analyse_recurring(cfg: Config, txs: list[Transaction], today: date | None = 
     return out
 
 
-def detect_recurring(cfg: Config, txs: list[Transaction], today: date | None = None) -> list[ScheduledItem]:
-    return [c.proposal for c in analyse_recurring(cfg, txs, today) if c.proposal is not None]
+def detect_recurring(
+    cfg: Config, txs: list[Transaction], today: date | None = None, aliases: dict[tuple[int, str], str] | None = None
+) -> list[ScheduledItem]:
+    return [c.proposal for c in analyse_recurring(cfg, txs, today, aliases) if c.proposal is not None]
 
 
 def is_proposed(verdict: str) -> bool:

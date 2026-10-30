@@ -323,7 +323,8 @@ def create_app(cfg: Config, with_scheduler: bool = False) -> FastAPI:
                     total += import_statement_transactions(d, st, a)
             c = effective(d)
             today = date.today()
-            for p_ in detect_recurring(c, d.list_transactions(since=today.replace(year=today.year - 3)), today):
+            for p_ in detect_recurring(c, d.list_transactions(since=today.replace(year=today.year - 3)), today,
+                                       d.get_payee_aliases()):
                 if d.find_item_by_pattern(p_.account_id, p_.payee_pattern or "") is None:
                     d.save_item(p_)
         finally:

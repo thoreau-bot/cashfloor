@@ -144,6 +144,13 @@ CREATE TABLE IF NOT EXISTS holdings (
     PRIMARY KEY (account_id, external_id)
 );
 
+CREATE TABLE IF NOT EXISTS payee_aliases (
+    account_id    INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    live_key      TEXT NOT NULL,
+    canonical_key TEXT NOT NULL,
+    PRIMARY KEY (account_id, live_key)
+);
+
 CREATE TABLE IF NOT EXISTS sync_log (
     id          INTEGER PRIMARY KEY,
     provider    TEXT NOT NULL,
@@ -472,6 +479,22 @@ class Database:
                     currency=r["currency"], created=_pdt(r["created"]), as_of=_pdt(r["as_of"]))
             for r in rows
         ]
+
+    # -- payee aliases (live-feed wording -> statement wording) -------------
+    def set_payee_alias(self, account_id: int, live_key: str, canonical_key: str) -> None:
+        if not live_key or not canonical_key or live_key == canonical_key:
+            return
+        with self.tx() as c:
+            c.execute(
+                "INSERT OR REPLACE INTO payee_aliases(account_id, live_key, canonical_key) VALUES (?,?,?)",
+                (account_id, live_key, canonical_key),
+            )
+
+    def get_payee_aliases(self) -> dict[tuple[int, str], str]:
+        return {
+            (r["account_id"], r["live_key"]): r["canonical_key"]
+            for r in self.conn.execute("SELECT account_id, live_key, canonical_key FROM payee_aliases")
+        }
 
     # -- scheduled items ---------------------------------------------------
     @staticmethod

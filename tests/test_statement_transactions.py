@@ -140,3 +140,6 @@ def test_filing_a_bank_statement_dedupes_against_live_feed_one_to_one(cfg, db, t
     from cashfloor.statements.organizer import import_statement_transactions
     import_statement_transactions(db, st, a, USAA_TEXT)
     assert len([t for t in db.list_transactions(a.id) if t.external_id.startswith("stmt:")]) == 6
+    # the match taught us SimpleFIN's wording for the Citi payment
+    aliases = db.get_payee_aliases()
+    assert aliases[(a.id, "citi card")] == "citi autopay"
