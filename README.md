@@ -31,18 +31,34 @@ get those from parsed statements (scraped or dropped) or from a manual entry.
 
 ## Quick start
 
+**Windows:** double-click `scripts\setup.bat` once (creates `.venv`, installs
+everything, runs the tests, writes `config.toml`). From then on, double-click
+`scripts\shell.bat` to get a Command Prompt with the environment active.
+
+**Linux / macOS:** `scripts/setup.sh` once, then `scripts/shell.sh`.
+
+Or by hand:
+
 ```bash
 git clone <this repo> && cd cashfloor
 python -m venv .venv && . .venv/bin/activate      # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"                             # add  ,scrape  for Playwright (then: playwright install chromium)
 cashfloor init                                      # writes config.toml
-cashfloor simplefin setup <SETUP_TOKEN>             # token from bridge.simplefin.org
+```
+
+Then, in the activated environment:
+
+```bash
+cashfloor simplefin setup SETUP_TOKEN               # token from bridge.simplefin.org (no brackets)
 cashfloor sync
 cashfloor accounts list                             # then label them:
 cashfloor accounts set 1 --key main-checking --type checking --pool
 cashfloor floor                                     # the projection, in words
 cashfloor serve                                     # dashboard at http://127.0.0.1:8477
 ```
+
+Requires Python 3.11+. Every dependency ships prebuilt wheels, so no C
+compiler is needed on any platform.
 
 `cashfloor serve` also runs the daily sync at `scheduler.daily_sync_time`.
 To run it headless on a box that's always on, use a systemd unit / Task
