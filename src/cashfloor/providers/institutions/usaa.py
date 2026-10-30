@@ -34,7 +34,8 @@ Config:
     headless = false            # USAA's bot detection: keep headful, use real Chrome
     statements_since = "2025-01-01"
     [provider.options]
-    channel = "chrome"          # use installed Google Chrome, not bundled Chromium
+    channel = "chrome"          # installed Google Chrome / "msedge"; or instead:
+    # executable_path = "C:/Users/you/AppData/Local/Vivaldi/Application/vivaldi.exe"
     # include = ["STATEMENT"]   # only titles containing one of these (case-insensitive); default: all
     # login_timeout_s = 300     # how long to wait for you to finish logging in
 

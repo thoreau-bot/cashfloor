@@ -73,7 +73,8 @@ enabled = true
 # headless = false              # keep false: USAA bot detection
 # statements_since = "2025-01-01"
 # [provider.options]
-# channel = "chrome"            # use installed Google Chrome, not bundled Chromium
+# channel = "chrome"            # use installed Google Chrome or "msedge" instead of bundled Chromium
+# executable_path = 'C:\Users\you\AppData\Local\Vivaldi\Application\vivaldi.exe'  # any Chromium-based browser
 # include = ["STATEMENT"]       # omit to download every document type
 
 # Example Playwright scraper.  One block per institution; the `module` is a

@@ -145,7 +145,10 @@ class PlaywrightProvider(Provider):
             )
             # "chrome" / "msedge" uses the real installed browser, which gets
             # through bot detection far more often than bundled Chromium.
-            if self.pc.options.get("channel"):
+            if self.pc.options.get("executable_path"):
+                # Any Chromium-based browser (Vivaldi, Brave, Chromium) by path.
+                launch_kwargs["executable_path"] = str(Path(self.pc.options["executable_path"]).expanduser())
+            elif self.pc.options.get("channel"):
                 launch_kwargs["channel"] = self.pc.options["channel"]
             ctx: BrowserContext = p.chromium.launch_persistent_context(**launch_kwargs)
             try:
