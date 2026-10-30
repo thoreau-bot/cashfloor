@@ -39,6 +39,9 @@ def step(d: date, freq: Frequency, anchor: date) -> date:
     if freq == Frequency.QUARTERLY:
         n = d + relativedelta(months=3)
         return _clamp(n.year, n.month, anchor.day)
+    if freq == Frequency.SEMIANNUAL:
+        n = d + relativedelta(months=6)
+        return _clamp(n.year, n.month, anchor.day)
     if freq == Frequency.YEARLY:
         n = d + relativedelta(years=1)
         return _clamp(n.year, n.month, anchor.day)

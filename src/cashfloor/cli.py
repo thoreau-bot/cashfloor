@@ -310,6 +310,29 @@ def statements_reset(
     rprint(f"[green]removed {n} statement records[/green]" + (" and files" if delete_files else ""))
 
 
+@statements_app.command("backfill")
+def statements_backfill() -> None:
+    """Extract transactions from every archived checking/savings statement
+    (history for the recurring detector).  Safe to re-run."""
+    from .statements.organizer import import_statement_transactions
+
+    db = _db()
+    try:
+        accts = {a.id: a for a in db.list_accounts(active_only=False)}
+        total = 0
+        for st in db.list_statements():
+            a = accts.get(st.account_id)
+            if not a or not st.archived_path or not Path(st.archived_path).exists():
+                continue
+            n = import_statement_transactions(db, st, a)
+            if n:
+                rprint(f"{Path(st.archived_path).name}: +{n}")
+            total += n
+    finally:
+        db.close()
+    rprint(f"[green]{total} transactions imported[/green] — run `cashfloor sync` to refresh proposals")
+
+
 @statements_app.command("text")
 def statements_text(path: Path, pages: int = typer.Option(2, help="How many pages to print")) -> None:
     """Print the text the parser sees for a PDF (to debug missed fields)."""

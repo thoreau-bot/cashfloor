@@ -299,14 +299,36 @@ def create_app(cfg: Config, with_scheduler: bool = False) -> FastAPI:
         return RedirectResponse("/items", status_code=303)
 
     @app.get("/statements", response_class=HTMLResponse)
-    def statements(request: Request):
+    def statements(request: Request, msg: str = ""):
         d = db()
         try:
             rows = d.list_statements()
             accts = {a.id: a for a in d.list_accounts(active_only=False)}
         finally:
             d.close()
-        return templates.TemplateResponse(request, "statements.html", {"statements": rows, "accts": accts})
+        return templates.TemplateResponse(request, "statements.html", {"statements": rows, "accts": accts, "msg": msg})
+
+    @app.post("/statements/backfill")
+    def statements_backfill():
+        from ..projection.recurring import detect_recurring
+        from ..statements.organizer import import_statement_transactions
+
+        d = db()
+        try:
+            accts = {a.id: a for a in d.list_accounts(active_only=False)}
+            total = 0
+            for st in d.list_statements():
+                a = accts.get(st.account_id)
+                if a and st.archived_path and Path(st.archived_path).exists():
+                    total += import_statement_transactions(d, st, a)
+            c = effective(d)
+            today = date.today()
+            for p_ in detect_recurring(c, d.list_transactions(since=today.replace(year=today.year - 3)), today):
+                if d.find_item_by_pattern(p_.account_id, p_.payee_pattern or "") is None:
+                    d.save_item(p_)
+        finally:
+            d.close()
+        return RedirectResponse(f"/statements?msg={total}+transactions+imported+from+statements", status_code=303)
 
     # ---- raw provider data (what came back, verbatim) ----
     @app.get("/data/raw", response_class=HTMLResponse)

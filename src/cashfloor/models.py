@@ -38,6 +38,7 @@ class Frequency(StrEnum):
     SEMIMONTHLY = "semimonthly"  # 1st & 15th style
     MONTHLY = "monthly"
     QUARTERLY = "quarterly"
+    SEMIANNUAL = "semiannual"
     YEARLY = "yearly"
 
 

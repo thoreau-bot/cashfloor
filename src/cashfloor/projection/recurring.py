@@ -49,7 +49,9 @@ def classify_interval(gaps: list[int], days: list[date]) -> Frequency | None:
         return Frequency.MONTHLY
     if 85 <= med <= 95 and spread <= 7:
         return Frequency.QUARTERLY
-    if 355 <= med <= 375:
+    if 175 <= med <= 190 and spread <= 10:
+        return Frequency.SEMIANNUAL
+    if 355 <= med <= 375 and spread <= 12:
         return Frequency.YEARLY
     return None
 
@@ -68,7 +70,7 @@ def detect_recurring(cfg: Config, txs: list[Transaction], today: date | None = N
 
     proposals: list[ScheduledItem] = []
     for (account_id, pattern, _sign), g in groups.items():
-        if len(g) < rc.min_occurrences:
+        if len(g) < min(rc.min_occurrences, 2):
             continue
         g.sort(key=lambda t: t.posted)
         # de-dupe same-day duplicates (split charges)
@@ -77,18 +79,21 @@ def detect_recurring(cfg: Config, txs: list[Transaction], today: date | None = N
             if dedup and (t.posted - dedup[-1].posted).days < 3:
                 continue
             dedup.append(t)
-        if len(dedup) < rc.min_occurrences:
-            continue
-        amounts = [abs(t.amount) for t in dedup]
-        med_amt = statistics.median(amounts)
-        if med_amt == 0:
-            continue
-        if any(abs(a - med_amt) / med_amt > rc.amount_tolerance for a in amounts[-rc.min_occurrences:]):
-            continue
         dates = [t.posted for t in dedup]
         gaps = [(b - a).days for a, b in zip(dates, dates[1:], strict=False)]
         freq = classify_interval(gaps, dates)
         if freq is None:
+            continue
+        # Long cycles (quarterly/yearly) would otherwise need years of history to qualify.
+        needed = 2 if freq in (Frequency.QUARTERLY, Frequency.SEMIANNUAL, Frequency.YEARLY) else rc.min_occurrences
+        if len(dedup) < needed:
+            continue
+        amounts = [abs(t.amount) for t in dedup]
+        latest_amt = amounts[-1]  # the most recent amount wins (rate changes)
+        if latest_amt == 0:
+            continue
+        recent = amounts[-min(needed, len(amounts)):]
+        if any(abs(a - latest_amt) / latest_amt > rc.amount_tolerance for a in recent):
             continue
         last = dates[-1]
         if (today - last).days > 2 * max(gaps):
@@ -99,7 +104,7 @@ def detect_recurring(cfg: Config, txs: list[Transaction], today: date | None = N
             id=None,
             name=_title(dedup[-1].payee or pattern),
             account_id=account_id,
-            amount=int(round(med_amt)) * (1 if dedup[-1].amount > 0 else -1),
+            amount=int(latest_amt) * (1 if dedup[-1].amount > 0 else -1),
             frequency=freq,
             next_date=last,
             source=ItemSource.DETECTED,

@@ -395,6 +395,15 @@ class Database:
                 n += cur.rowcount
         return n
 
+    def earliest_live_transaction(self, account_id: int) -> date | None:
+        """Earliest transaction from a live feed (SimpleFIN/OFX/CSV), i.e. not
+        extracted from a statement PDF.  Statement imports stop here."""
+        r = self.conn.execute(
+            "SELECT MIN(posted) FROM transactions WHERE account_id=? AND external_id NOT LIKE 'stmt:%'",
+            (account_id,),
+        ).fetchone()
+        return date.fromisoformat(r[0]) if r and r[0] else None
+
     def list_transactions(
         self, account_id: int | None = None, since: date | None = None, limit: int | None = None
     ) -> list[Transaction]:
