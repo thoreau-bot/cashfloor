@@ -83,24 +83,44 @@ def is_p2p(pattern: str) -> bool:
     return bool(P2P_RE.match(pattern or ""))
 
 
-def monthly_aggregate(txs: list[Transaction], today: date) -> tuple[int, int, int, float] | None:
-    """For series that don't fit a clean cadence: if most of the last 12
-    months contain at least one payment, return (median monthly total in
-    cents, typical day of month, active months, payments per month)."""
+def anchored_monthly(txs: list[Transaction], today: date, window_days: int = 5) -> dict | None:
+    """For series muddied by extra manual payments: find the usual payment
+    day of month (the autopay), keep only the payment nearest that day in each
+    of the last 12 months, and ignore the rest.  Returns the kept series or
+    None if fewer than 8 of 12 months have an anchored payment."""
     if not txs or (today - txs[-1].posted).days > 45:
         return None
     start = (today.replace(day=1) - timedelta(days=365)).replace(day=1)
-    buckets: dict[tuple[int, int], list[Transaction]] = defaultdict(list)
-    for t in txs:
-        if t.posted >= start:
-            buckets[(t.posted.year, t.posted.month)].append(t)
-    months = len(buckets)
-    if months < 8:
+    recent = [t for t in txs if t.posted >= start]
+    if len(recent) < 6:
         return None
-    totals = [sum(abs(t.amount) for t in v) for v in buckets.values()]
-    first_days = [min(t.posted.day for t in v) for v in buckets.values()]
-    per_month = sum(len(v) for v in buckets.values()) / months
-    return int(statistics.median(totals)), int(statistics.median(first_days)), months, per_month
+    # most common day-of-month, clustering +/-2 days
+    days = [t.posted.day for t in recent]
+    best_day, best_n = 0, -1
+    for cand in range(1, 32):
+        n = sum(1 for d in days if min(abs(d - cand), 31 - abs(d - cand)) <= 2)
+        if n > best_n:
+            best_day, best_n = cand, n
+    in_cluster = [d for d in days if min(abs(d - best_day), 31 - abs(d - best_day)) <= 2]
+    best_day = int(statistics.median(in_cluster)) if in_cluster else best_day
+    by_month: dict[tuple[int, int], list[Transaction]] = defaultdict(list)
+    for t in recent:
+        by_month[(t.posted.year, t.posted.month)].append(t)
+    kept: list[Transaction] = []
+    ignored = 0
+    for _, group in sorted(by_month.items()):
+        def dist(t: Transaction) -> int:
+            d = abs(t.posted.day - best_day)
+            return min(d, 31 - d)
+        nearest = min(group, key=dist)
+        if dist(nearest) <= window_days:
+            kept.append(nearest)
+            ignored += len(group) - 1
+        else:
+            ignored += len(group)
+    if len(kept) < 8:
+        return None
+    return {"kept": kept, "day": best_day, "ignored": ignored, "months": len(by_month)}
 
 
 def merge_truncated_names(groups: dict) -> dict:
@@ -187,27 +207,35 @@ def analyse_recurring(
         freq = classify_interval(gaps, dates)
         cand.frequency = freq
         if freq is None:
-            agg = monthly_aggregate(dedup, today)
-            if agg is None:
+            anchored = anchored_monthly(dedup, today)
+            if anchored is None:
                 cand.verdict = f"irregular (median gap {statistics.median(gaps):.0f}d)"
                 continue
-            # Paid in several pieces most months (card payments, split rent):
-            # treat as one monthly bill of the typical monthly total.
-            amount, day, months, per_month = agg
+            # The regular payment (autopay) is the series; extra manual
+            # payments in the same month are ignored for cadence and amount.
+            kept = anchored["kept"]
+            amounts = [abs(t.amount) for t in kept]
+            use_amt = int(statistics.median(amounts[-6:]))
+            if use_amt < 100:
+                cand.verdict = "negligible amount"
+                continue
             cand.frequency = Frequency.MONTHLY
-            anchor = dedup[-1].posted.replace(day=min(day, 28))
+            cand.last = kept[-1].posted
+            cand.latest_amount = amounts[-1]
+            anchor = kept[-1].posted.replace(day=min(anchored["day"], 28))
             seed = ScheduledItem(
-                id=None, name=_title(dedup[-1].payee or pattern), account_id=account_id,
-                amount=amount * (1 if dedup[-1].amount > 0 else -1), frequency=Frequency.MONTHLY,
-                next_date=anchor, source=ItemSource.DETECTED, confidence=round(0.5 + 0.02 * months, 2),
+                id=None, name=_title(kept[-1].payee or pattern), account_id=account_id,
+                amount=use_amt * (1 if kept[-1].amount > 0 else -1), frequency=Frequency.MONTHLY,
+                next_date=anchor, source=ItemSource.DETECTED, confidence=round(0.5 + 0.03 * len(kept), 2),
                 confirmed=False, payee_pattern=pattern,
-                notes=(f"monthly total across {months} of the last 12 months (~{per_month:.1f} payments/month); "
-                       f"variable amount; median monthly total used"),
+                notes=(f"regular payment around day {anchored['day']} in {len(kept)} of the last "
+                       f"{anchored['months']} months; {anchored['ignored']} extra payment(s) ignored; "
+                       f"variable amount; median of last 6 used"),
             )
             nd = advance_past(seed, today)
             seed.next_date = nd if nd > today else advance_past(seed, today + timedelta(days=1))
             cand.proposal = seed
-            cand.verdict = "proposed (monthly total)"
+            cand.verdict = "proposed (regular payment; extras ignored)"
             continue
         needed = 2 if freq in (Frequency.QUARTERLY, Frequency.SEMIANNUAL, Frequency.YEARLY) else rc.min_occurrences
         if len(dedup) < needed:

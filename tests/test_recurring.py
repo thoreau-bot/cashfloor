@@ -60,22 +60,26 @@ def test_truncated_statement_name_merges_with_live_feed_name():
     assert "21 transactions" in found[0].notes
 
 
-def test_card_paid_in_pieces_becomes_monthly_total():
+def test_card_autopay_with_extra_manual_payments_keeps_the_anchored_series():
     from dateutil.relativedelta import relativedelta
 
-    days = [(5, 23), (7,), (12, 28), (3,), (9, 17), (6,), (4, 26), (8,), (11, 21), (5,), (14, 27), (6,), (3, 19)]
     txs, i = [], 0
     m = date(2025, 10, 1)
-    for ds in days:  # one or two payments a month on scattered days
-        for k, d in enumerate(ds):
-            txs.append(_tx(f"c{i}", m.replace(day=d), -40_000 if k == 0 else -25_000, "CAPITAL ONE CRCARDPMT"))
+    extras = {11, 1, 3, 4, 6, 8}  # months with an additional manual payment
+    for k in range(13):
+        d = m + relativedelta(months=k)
+        txs.append(_tx(f"a{i}", d.replace(day=17 if k % 2 else 18), -(50_000 + 1_000 * k), "CAPITAL ONE CRCARDPMT"))
+        i += 1
+        if d.month in extras:
+            txs.append(_tx(f"x{i}", d.replace(day=3 + k), -20_000, "CAPITAL ONE CRCARDPMT"))
             i += 1
-        m += relativedelta(months=1)
     found = {it.payee_pattern: it for it in detect_recurring(Config(), txs, TODAY)}
     cap = found["capital one crcardpmt"]
-    assert cap.frequency == Frequency.MONTHLY and "monthly total" in cap.notes
-    assert cap.amount in (-40_000, -65_000)  # median of the monthly totals
-    assert cap.next_date > TODAY
+    assert cap.frequency == Frequency.MONTHLY
+    assert "6 extra payment(s) ignored" in cap.notes
+    assert ("day 17" in cap.notes) or ("day 18" in cap.notes)
+    assert cap.next_date > TODAY and cap.next_date.day in (17, 18)
+    assert -62_000 <= cap.amount <= -57_000  # median of the last six anchored amounts, extras excluded
 
 
 def test_accent_folding_merges_series():
