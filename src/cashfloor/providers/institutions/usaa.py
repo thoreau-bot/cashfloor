@@ -248,6 +248,74 @@ class Scraper(InstitutionScraper):
     def fetch_accounts(self, page: Page) -> list[Account]:
         return []  # balances come from SimpleFIN
 
+    # -- pagination --------------------------------------------------------
+    def _api_headers(self) -> dict[str, str]:
+        return {"Authorization": self.auth["authorization"], "api-key": self.auth["api-key"],
+                "Accept": "application/json, text/plain, */*"}
+
+    def _follow_cursor(self, page: Page) -> None:
+        """The page loads only the first 100 documents; the rest come via a
+        `lastItem` cursor.  Try the cursor as a query parameter, then as a
+        header; if neither is accepted, page through the UI instead."""
+        max_pages = int(self.options.get("max_pages", 50))
+        cursor = self.list_payloads[-1].get("lastItem") if isinstance(self.list_payloads[-1], dict) else None
+        if not cursor:
+            return
+        base = self.list_urls[-1].split("?")[0] + "?limit=100"
+        variants = [
+            ("query lastItem", lambda c: (base + "&lastItem=" + c, {})),
+            ("query last-item", lambda c: (base + "&last-item=" + c, {})),
+            ("header lastItem", lambda c: (base, {"lastItem": c})),
+            ("header last-item", lambda c: (base, {"last-item": c})),
+        ]
+        method = None
+        pages = 0
+        while cursor and pages < max_pages:
+            got = None
+            for name, build in ([method] if method else variants):
+                url, extra = build(cursor)
+                try:
+                    r = page.request.get(url, headers={**self._api_headers(), **extra}, timeout=60_000)
+                    if not r.ok:
+                        continue
+                    j = r.json()
+                except Exception:  # noqa: BLE001
+                    continue
+                if isinstance(j, dict) and j.get("documents"):
+                    new_ids = {d.get("documentId") for d in j["documents"]}
+                    old_ids = {d.get("documentId") for p in self.list_payloads for d in p.get("documents", [])}
+                    if new_ids - old_ids:  # genuinely a new page, not the first page again
+                        got, method = j, (name, build)
+                        log.info("USAA: cursor accepted as %s", name)
+                        break
+            if got is None:
+                log.info("USAA: API cursor not accepted; paging through the UI instead")
+                self._page_through_ui(page)
+                return
+            self.list_payloads.append(got)
+            self.list_urls.append(base)
+            pages += 1
+            cursor = got.get("lastItem")
+            page.wait_for_timeout(400)
+
+    def _page_through_ui(self, page: Page) -> None:
+        """Fallback: click 'Next page' until the document list stops growing;
+        the page fetches further API pages itself and we capture them."""
+        last = -1
+        for _ in range(int(self.options.get("max_pages", 50)) * 10):
+            count = sum(len(p.get("documents", [])) for p in self.list_payloads if isinstance(p, dict))
+            btn = page.get_by_role("button", name=re.compile(r"next page", re.I))
+            if btn.count() == 0 or btn.first.is_disabled():
+                break
+            btn.first.click()
+            page.wait_for_timeout(600)
+            if count == last:
+                # one more try in case the fetch was slow
+                page.wait_for_timeout(1500)
+                if sum(len(p.get("documents", [])) for p in self.list_payloads if isinstance(p, dict)) == count:
+                    break
+            last = count
+
     def download_all_statements(self, page: Page, since: date | None, dest: Path) -> list[Path]:
         self._wire(page)
         if not self.list_payloads:
@@ -257,6 +325,8 @@ class Scraper(InstitutionScraper):
             raise RuntimeError("USAA: document list was not observed; is the session logged in?")
         if not all(k in self.auth for k in AUTH_HEADERS):
             raise RuntimeError("USAA: could not capture API auth headers from the page")
+
+        self._follow_cursor(page)
 
         docs = []
         for p in self.list_payloads:

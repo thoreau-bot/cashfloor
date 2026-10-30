@@ -78,11 +78,19 @@ class FakeResponse:
 
 
 class FakeRequest:
-    def __init__(self):
+    def __init__(self, pages=None):
         self.calls = []
+        self.pages = pages or {}  # cursor -> payload, served when ?lastItem=<cursor>
 
     def get(self, url, headers=None, timeout=None):
         self.calls.append((url, headers))
+        if "/documents?" in url:
+            cur = url.split("lastItem=")[-1] if "lastItem=" in url else None
+            if cur in self.pages:
+                r = FakeResponse(json.dumps(self.pages[cur]).encode())
+                r.json = lambda: self.pages[cur]
+                return r
+            return FakeResponse(b"", ok=False)
         return FakeResponse(b"%PDF-1.7 fake" if CID in url else b'{"error":"no"}')
 
 
@@ -107,6 +115,29 @@ class FakePage:
             def count(self_inner):
                 return 1
         return L()
+
+
+def test_cursor_pagination_via_query_param(tmp_path: Path):
+    s = Scraper({}, {"delay_ms": 0})
+    page = FakePage()
+    page.request = FakeRequest(pages={"c1": {"documents": [
+        {"documentId": CID2, "documentDate": "2024-03-08", "title": "CHECKING ******4471 STATEMENT", "accountName": ""}]}})
+    s._wire(page)
+    class Req:
+        url = "https://api.usaa.com/v1/x"
+        headers = {"authorization": "Bearer abc", "api-key": "k123"}
+    page.handlers["request"](Req())
+    class Resp:
+        url = "https://api.usaa.com/v1/enterprise/my-documents/experience/individuals/GUID/documents?limit=100"
+        ok = True
+        def json(self):
+            return {"documents": [{"documentId": CID, "documentDate": "2026-10-08",
+                                   "title": "CHECKING ******4471 STATEMENT", "accountName": ""}], "lastItem": "c1"}
+    page.handlers["response"](Resp())
+    saved = s.download_all_statements(page, since=None, dest=tmp_path)
+    assert len(s.list_payloads) == 2 and s.raw["extracted"] == 2
+    assert any("lastItem=c1" in u for u, _ in page.request.calls)
+    assert len(saved) == 1  # CID2's fake GET returns non-PDF; CID downloads
 
 
 def test_download_flow_with_captured_auth(tmp_path: Path):
