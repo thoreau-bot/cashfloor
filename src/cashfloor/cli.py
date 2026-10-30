@@ -23,10 +23,12 @@ app = typer.Typer(help="cashfloor — local cash-flow floor projector and statem
 accounts_app = typer.Typer(help="Inspect and label accounts.")
 items_app = typer.Typer(help="Scheduled inflows/outflows used by the projection.")
 secret_app = typer.Typer(help="Store secrets in the OS keyring.")
+statements_app = typer.Typer(help="Statement archive maintenance.")
 simplefin_app = typer.Typer(help="SimpleFIN Bridge setup.")
 app.add_typer(accounts_app, name="accounts")
 app.add_typer(items_app, name="items")
 app.add_typer(secret_app, name="secret")
+app.add_typer(statements_app, name="statements")
 app.add_typer(simplefin_app, name="simplefin")
 
 _state: dict = {}
@@ -177,12 +179,14 @@ def accounts_set(
     type_: str | None = typer.Option(None, "--type"),
     pool: bool | None = typer.Option(None, "--pool/--no-pool"),
     active: bool | None = typer.Option(None, "--active/--inactive"),
+    last4: str | None = typer.Option(None, help="Last 4 digits, used to match statements"),
 ) -> None:
-    """Label an account: short key, nickname, type, and whether it's in the cash pool."""
+    """Label an account: short key, nickname, type, last-4, and whether it's in the cash pool."""
     db = _db()
     try:
         db.set_account_user_fields(account_id, key=key, nickname=nickname,
-                                   type=AccountType(type_) if type_ else None, in_pool=pool, active=active)
+                                   type=AccountType(type_) if type_ else None, in_pool=pool, active=active,
+                                   last4=last4)
     finally:
         db.close()
     rprint("[green]updated[/green]")
@@ -277,6 +281,31 @@ def items_delete(item_ids: list[int]) -> None:
     finally:
         db.close()
     rprint("[green]deleted[/green]")
+
+
+# -- statements ---------------------------------------------------------------
+@statements_app.command("reset")
+def statements_reset(
+    yes: bool = typer.Option(False, "--yes", help="Skip confirmation"),
+    delete_files: bool = typer.Option(False, help="Also delete the archive folder and provider download manifests"),
+) -> None:
+    """Forget every archived statement so they can be re-downloaded / re-filed.
+    Use after a parser fix.  Keeps the PDFs unless --delete-files."""
+    import shutil
+
+    cfg = _state["cfg"]
+    if not yes and not typer.confirm("Delete all statement records" + (" and files" if delete_files else "") + "?"):
+        raise typer.Exit(1)
+    db = _db()
+    try:
+        n = db.delete_all_statements()
+    finally:
+        db.close()
+    if delete_files:
+        shutil.rmtree(cfg.general.archive_dir, ignore_errors=True)
+        for m in (cfg.general.data_dir / "downloads").glob("*/.*_downloaded.json"):
+            m.unlink(missing_ok=True)
+    rprint(f"[green]removed {n} statement records[/green]" + (" and files" if delete_files else ""))
 
 
 # -- secrets ----------------------------------------------------------------

@@ -238,12 +238,12 @@ def create_app(cfg: Config, with_scheduler: bool = False) -> FastAPI:
 
     @app.post("/accounts/{account_id}")
     def account_update(account_id: int, key: str = Form(""), nickname: str = Form(""), type: str = Form("other"),
-                       in_pool: bool = Form(False), active: bool = Form(False),
+                       in_pool: bool = Form(False), active: bool = Form(False), last4: str = Form(""),
                        due_date: str = Form(""), statement_balance: str = Form(""), minimum_payment: str = Form("")):
         d = db()
         try:
             d.set_account_user_fields(account_id, key=key, nickname=nickname, type=AccountType(type),
-                                      in_pool=in_pool, active=active)
+                                      in_pool=in_pool, active=active, last4=last4)
             if due_date:
                 d.set_account_due(account_id, due_date=date.fromisoformat(due_date),
                                   statement_balance=to_cents(statement_balance) if statement_balance else None,

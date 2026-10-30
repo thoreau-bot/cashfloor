@@ -250,19 +250,41 @@ class Scraper(InstitutionScraper):
             "Accept": "application/pdf, application/json, */*",
         }
         saved: list[Path] = []
-        for d in sorted(docs, key=lambda x: x["day"]):
+        failures = 0
+        for d in sorted(docs, key=lambda x: x["day"], reverse=True):  # newest first
             key = f"{d['content_id']}:{d['day'].isoformat()}"
             if key in done:
                 continue
-            r = page.request.get(content_url(d["content_id"], d["day"]), headers=headers, timeout=60_000)
-            body = r.body() if r.ok else b""
+            try:
+                r = page.request.get(content_url(d["content_id"], d["day"]), headers=headers, timeout=60_000)
+                if r.status in (401, 403):
+                    # token expired: reload the page so it mints fresh headers, then retry once
+                    log.info("USAA: auth expired, refreshing session headers")
+                    page.reload(wait_until="networkidle")
+                    page.wait_for_timeout(1500)
+                    headers["Authorization"] = self.auth["authorization"]
+                    headers["api-key"] = self.auth["api-key"]
+                    r = page.request.get(content_url(d["content_id"], d["day"]), headers=headers, timeout=60_000)
+                body = r.body() if r.ok else b""
+            except Exception as e:  # noqa: BLE001 — one bad document never stops the run
+                failures += 1
+                log.warning("USAA: %s %s failed: %s", d["day"], d["title"], e)
+                continue
             if not body.startswith(b"%PDF"):
-                continue  # not a PDF (e.g. non-renderable notice); leave for next run
+                failures += 1
+                log.warning("USAA: %s %s: not a PDF (HTTP %s)", d["day"], d["title"], r.status)
+                continue
             target = dest / safe_name(d)
             target.write_bytes(body)
+            target.with_name(target.name + ".meta.json").write_text(json.dumps({
+                "institution": self.institution, "title": d["title"], "account": d["account"],
+                "date": d["day"].isoformat(), "content_id": d["content_id"], "source": "usaa",
+            }))
             saved.append(target)
             log.info("USAA: downloaded %s", target.name)
             done.add(key)
             manifest_path.write_text(json.dumps(sorted(done)))
             page.wait_for_timeout(int(self.options.get("delay_ms", 800)))  # be polite
+        log.info("USAA: %d downloaded, %d skipped (already had), %d failed", len(saved),
+                 len(docs) - len(saved) - failures, failures)
         return saved

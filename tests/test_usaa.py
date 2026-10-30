@@ -36,7 +36,7 @@ def test_content_url_and_name():
 
 class FakeResponse:
     def __init__(self, body: bytes, ok=True):
-        self._b, self.ok = body, ok
+        self._b, self.ok, self.status = body, ok, 200 if ok else 500
 
     def body(self):
         return self._b
@@ -97,6 +97,9 @@ def test_download_flow_with_captured_auth(tmp_path: Path):
     saved = s.download_all_statements(page, since=date(2026, 6, 1), dest=tmp_path)
     assert [p.name for p in saved] == ["2026-10-08_USAA_4471_CHECKING-STATEMENT.pdf"]
     assert saved[0].read_bytes().startswith(b"%PDF")
+    meta = json.loads(saved[0].with_name(saved[0].name + ".meta.json").read_text())
+    assert meta == {"institution": "USAA", "title": "CHECKING STATEMENT", "account": "*4471",
+                    "date": "2026-10-08", "content_id": CID, "source": "usaa"}
     url, headers = page.request.calls[0]
     assert headers["Authorization"] == "Bearer abc" and headers["api-key"] == "k123"
     assert headers["Transform-To-Pdf"] == "true"

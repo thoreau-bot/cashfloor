@@ -3,12 +3,13 @@
 <h2>Statement archive</h2>
 <div class="card">
 <table>
-  <tr><th>Date</th><th>Institution</th><th>Account</th><th>Period</th><th>Due</th><th class="num">Amount due</th><th class="num">Closing</th><th>File</th><th></th></tr>
+  <tr><th>Date</th><th>Institution</th><th>Account</th><th>Document</th><th>Period</th><th>Due</th><th class="num">Amount due</th><th class="num">Closing</th><th>File</th><th></th></tr>
   {% for s in statements %}
   <tr>
     <td>{{ s.statement_date or s.period_end or '' }}</td>
     <td>{{ s.institution }}</td>
     <td>{{ accts[s.account_id].display_name if s.account_id in accts else ('x' ~ s.last4 if s.last4 else '—') }}</td>
+    <td class="small">{{ s.title or 'statement' }}</td>
     <td class="small">{{ s.period_start or '' }} → {{ s.period_end or '' }}</td>
     <td>{{ s.due_date or '' }}</td>
     <td class="num">{{ s.amount_due | money }}</td>
@@ -17,7 +18,7 @@
     <td>{% if s.needs_review %}<span class="warn">review</span>{% endif %}</td>
   </tr>
   {% else %}
-  <tr><td colspan="9" class="muted">Nothing archived yet. Drop PDFs in the inbox folder and press <strong>Sync now</strong>, or run <code>cashfloor ingest &lt;folder&gt;</code>.</td></tr>
+  <tr><td colspan="10" class="muted">Nothing archived yet. Drop PDFs in the inbox folder and press <strong>Sync now</strong>, or run <code>cashfloor ingest &lt;folder&gt;</code>.</td></tr>
   {% endfor %}
 </table>
 </div>

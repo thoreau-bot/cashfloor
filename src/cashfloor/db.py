@@ -112,7 +112,8 @@ CREATE TABLE IF NOT EXISTS statements (
     sha256          TEXT NOT NULL UNIQUE,
     parsed_ok       INTEGER NOT NULL DEFAULT 1,
     needs_review    INTEGER NOT NULL DEFAULT 0,
-    imported_at     TEXT NOT NULL
+    imported_at     TEXT NOT NULL,
+    title           TEXT
 );
 
 CREATE TABLE IF NOT EXISTS connections (
@@ -185,6 +186,7 @@ class Database:
     _ADDED_COLUMNS = {
         "accounts": [("conn_id", "TEXT"), ("extra", "TEXT"), ("sync_error", "TEXT")],
         "transactions": [("extra", "TEXT")],
+        "statements": [("title", "TEXT")],
     }
 
     def migrate(self) -> None:
@@ -314,8 +316,11 @@ class Database:
         type: AccountType | None = None,
         in_pool: bool | None = None,
         active: bool | None = None,
+        last4: str | None = None,
     ) -> None:
         sets, vals = [], []
+        if last4 is not None:
+            sets.append("last4=?"); vals.append(last4.strip()[-4:] or None)
         if key is not None:
             sets.append("key=?"); vals.append(key or None)
         if nickname is not None:
@@ -534,13 +539,13 @@ class Database:
             cur = c.execute(
                 """INSERT INTO statements(account_id, institution, period_start, period_end,
                    statement_date, due_date, amount_due, minimum_due, closing_balance, last4,
-                   source_path, archived_path, sha256, parsed_ok, needs_review, imported_at)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                   source_path, archived_path, sha256, parsed_ok, needs_review, imported_at, title)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     s.account_id, s.institution, _d(s.period_start), _d(s.period_end),
                     _d(s.statement_date), _d(s.due_date), s.amount_due, s.minimum_due,
                     s.closing_balance, s.last4, s.source_path, s.archived_path, s.sha256,
-                    int(s.parsed_ok), int(s.needs_review), _dt(s.imported_at),
+                    int(s.parsed_ok), int(s.needs_review), _dt(s.imported_at), s.title,
                 ),
             )
             s.id = cur.lastrowid
@@ -565,9 +570,14 @@ class Database:
                 sha256=r["sha256"], parsed_ok=bool(r["parsed_ok"]),
                 needs_review=bool(r["needs_review"]),
                 imported_at=_pdt(r["imported_at"]) or datetime.now(),
+                title=r["title"],
             )
             for r in self.conn.execute(q, vals)
         ]
+
+    def delete_all_statements(self) -> int:
+        with self.tx() as c:
+            return c.execute("DELETE FROM statements").rowcount
 
     # -- sync log ----------------------------------------------------------
     def log_sync_start(self, provider: str) -> int:

@@ -174,6 +174,7 @@ class Statement:
     parsed_ok: bool = True
     needs_review: bool = False
     imported_at: datetime = field(default_factory=datetime.now)
+    title: str | None = None  # provider-supplied document title, e.g. "CHECKING STATEMENT"
 
 
 @dataclass
