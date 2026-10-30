@@ -24,6 +24,7 @@ from abc import ABC, abstractmethod
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlparse
 
 from .. import secrets
 from ..models import Account, Transaction
@@ -167,8 +168,24 @@ class PlaywrightProvider(Provider):
                          self._profile_dir())
                 ctx = p.chromium.launch_persistent_context(**launch_kwargs)
             try:
-                page = ctx.new_page()
+                created_tab = True
+                if browser is not None:
+                    # Attached mode: reuse an existing tab (new_page can stall
+                    # against browsers whose UI is itself a page, e.g. Vivaldi).
+                    host = urlparse(scraper.login_url).hostname or ""
+                    existing = [pg for pg in ctx.pages if host and host in (urlparse(pg.url).hostname or "")]
+                    internal = ("chrome", "vivaldi", "devtools")
+                    existing = existing or [pg for pg in ctx.pages if not pg.url.startswith(internal)]
+                    if existing:
+                        page = existing[0]
+                        created_tab = False
+                        log.info("%s: using your open tab %s", self.pc.name, page.url)
+                    else:
+                        page = ctx.new_page()
+                else:
+                    page = ctx.new_page()
                 log.info("%s: opening %s", self.pc.name, scraper.login_url)
+                page.bring_to_front()
                 page.goto(scraper.login_url, wait_until="domcontentloaded")
                 if not scraper.is_logged_in(page):
                     log.info("%s: not logged in — please sign in in the browser window (waiting up to %ss)",
@@ -196,7 +213,8 @@ class PlaywrightProvider(Provider):
                     res.errors.append(f"statements failed: {e}")
             finally:
                 if browser is not None:
-                    page.close()  # leave the user's browser running; just drop our tab
+                    if created_tab:
+                        page.close()  # leave the user's browser running; just drop our tab
                     browser.close()  # disconnects CDP only
                 else:
                     ctx.close()
