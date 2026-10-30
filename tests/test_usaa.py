@@ -2,7 +2,14 @@ import json
 from datetime import date
 from pathlib import Path
 
-from cashfloor.providers.institutions.usaa import Scraper, content_url, extract_documents, safe_name
+from cashfloor.providers.institutions.usaa import (
+    Scraper,
+    clean_title,
+    content_url,
+    extract_documents,
+    last4_from,
+    safe_name,
+)
 
 CID = "3c1f0a52-9b7e-4d21-8e4a-5f6a7b8c9d01"
 CID2 = "9e8d7c6b-5a4f-4e3d-9c2b-1a0f9e8d7c6b"
@@ -24,6 +31,30 @@ def test_extract_handles_several_plausible_shapes():
         assert "STATEMENT" in docs[0]["title"] or docs[0]["title"] == "X"
     # nested document inside a document is not double-counted
     assert len(extract_documents(shapes[3])) == 1
+
+
+def test_real_usaa_shape_is_pinned():
+    payload = {"documents": [
+        {"documentId": CID, "documentDate": "2026-10-08", "displayDate": "10/08/2026",
+         "title": "CHECKING ******4471 STATEMENT ", "accountName": "", "category": "Banking",
+         "subCategory": "Deposits", "filterGroup": "All banking accounts", "unread": True},
+        {"documentId": CID2, "documentDate": "2026-10-27", "displayDate": "10/27/2026",
+         "title": "Auto and Property Insurance Statement", "accountName": "", "category": "Insurance",
+         "subCategory": "Accounting/Billing", "filterGroup": "All insurance policies", "unread": False},
+    ], "lastItem": "abc"}
+    docs = extract_documents(payload)
+    assert [d["title"] for d in docs] == ["CHECKING STATEMENT", "Auto and Property Insurance Statement"]
+    assert docs[0]["last4"] == "4471" and docs[0]["day"] == date(2026, 10, 8)
+    assert docs[1]["last4"] is None and docs[1]["category"] == "Insurance"
+
+
+def test_clean_title_and_last4():
+    assert clean_title("CHECKING ******4471 STATEMENT ") == "CHECKING STATEMENT"
+    assert clean_title("Automobile Policy *********-2208 Renewal  / Auto ID Cards") == "Automobile Policy Renewal / Auto ID Cards"
+    assert last4_from("", "CHECKING ******4471 STATEMENT") == "4471"
+    assert last4_from("USAA SAVINGS *5530", "SAVINGS STATEMENT") == "5530"
+    assert last4_from("*********-2208", "") == "2208"
+    assert last4_from("", "AutoIDCards") is None
 
 
 def test_content_url_and_name():
@@ -102,8 +133,8 @@ def test_download_flow_with_captured_auth(tmp_path: Path):
     assert [p.name for p in saved] == ["2026-10-08_USAA_4471_CHECKING-STATEMENT_3c1f0a52.pdf"]
     assert saved[0].read_bytes().startswith(b"%PDF")
     meta = json.loads(saved[0].with_name(saved[0].name + ".meta.json").read_text())
-    assert meta == {"institution": "USAA", "title": "CHECKING STATEMENT", "account": "*4471",
-                    "date": "2026-10-08", "content_id": CID, "source": "usaa"}
+    assert {k: meta[k] for k in ("institution", "title", "last4", "date", "content_id")} == {
+        "institution": "USAA", "title": "CHECKING STATEMENT", "last4": "4471", "date": "2026-10-08", "content_id": CID}
     url, headers = page.request.calls[0]
     assert headers["Authorization"] == "Bearer abc" and headers["api-key"] == "k123"
     assert headers["Transform-To-Pdf"] == "true"

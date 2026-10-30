@@ -40,6 +40,8 @@ def _main(
     verbose: bool = typer.Option(False, "--verbose", "-v"),
 ) -> None:
     logging.basicConfig(level=logging.DEBUG if verbose else logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    for noisy in ("pdfminer", "asyncio", "httpx", "httpcore", "apscheduler"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
     _state["cfg"] = load_config(config)
 
 

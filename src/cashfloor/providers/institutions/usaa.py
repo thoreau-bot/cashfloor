@@ -74,12 +74,33 @@ log = logging.getLogger("cashfloor.usaa")
 # Field-name hints.  The list JSON's exact schema wasn't captured (it would
 # have meant exporting a live session token), so extraction is heuristic
 # and the raw JSON is saved under data/raw/ for refinement.
-ID_KEYS = ("contentId", "content_id", "contentGuid", "documentId", "document_id", "id")
-DATE_KEYS = ("displayDate", "display_date", "deliveryDate", "delivery_date", "dateDelivered",
-             "documentDate", "statementDate", "date")
+# Observed USAA list entry (2026-10):
+#   {"documentId": <guid>, "documentDate": "2026-10-08", "displayDate": "10/08/2026",
+#    "title": "CHECKING ******4471 STATEMENT ", "accountName": "USAA CLASSIC CHECKING *4471" | "",
+#    "category": "Banking"|"Insurance"|"General", "subCategory": "Deposits"|"Accounting/Billing"|...,
+#    "filterGroup": "All banking accounts", "unread": bool}
+# Paginated with a top-level "lastItem" cursor; the page follows it itself.
+ID_KEYS = ("documentId", "contentId", "content_id", "contentGuid", "document_id", "id")
+DATE_KEYS = ("documentDate", "displayDate", "display_date", "deliveryDate", "delivery_date", "dateDelivered",
+             "statementDate", "date")
 TITLE_KEYS = ("title", "documentTitle", "name", "description", "documentType", "type")
-ACCOUNT_KEYS = ("accountLabel", "accountName", "account", "maskedAccountNumber", "accountNumber",
+ACCOUNT_KEYS = ("accountName", "accountLabel", "account", "maskedAccountNumber", "accountNumber",
                 "productName", "displayAccount")
+MASK_RE = re.compile(r"\*+[\w]*-?\d+[A-Za-z]?")  # "******4471", "*********-2208", "*-12A"
+
+
+def clean_title(title: str) -> str:
+    """'CHECKING ******4471 STATEMENT ' -> 'CHECKING STATEMENT'."""
+    t = MASK_RE.sub(" ", title or "")
+    return re.sub(r"\s+", " ", t).strip(" /-")
+
+
+def last4_from(*texts: str) -> str | None:
+    for t in texts:
+        m = re.search(r"\*+[\w-]*?(\d{4})(?!\d)", t or "")
+        if m:
+            return m.group(1)
+    return None
 
 
 def _parse_day(v: Any) -> date | None:
@@ -146,7 +167,13 @@ def extract_documents(payload: Any) -> list[dict]:
             acct = _first(o, ACCOUNT_KEYS, lambda v: isinstance(v, str | int))
             if isinstance(acct, dict):
                 acct = _first(acct, ACCOUNT_KEYS + ("name", "label"), lambda v: isinstance(v, str))
-            found.append({"content_id": cid, "day": day, "title": str(title), "account": str(acct or "")})
+            found.append({
+                "content_id": cid, "day": day,
+                "title": clean_title(str(title)), "raw_title": str(title),
+                "account": str(acct or ""),
+                "last4": last4_from(str(acct or ""), str(title)),
+                "category": str(o.get("category") or ""), "subcategory": str(o.get("subCategory") or ""),
+            })
             return  # don't descend into a document's own children
         for v in o.values():
             if isinstance(v, dict | list):
@@ -221,7 +248,7 @@ class Scraper(InstitutionScraper):
     def fetch_accounts(self, page: Page) -> list[Account]:
         return []  # balances come from SimpleFIN
 
-    def download_all_statements(self, page: Page, since: date, dest: Path) -> list[Path]:
+    def download_all_statements(self, page: Page, since: date | None, dest: Path) -> list[Path]:
         self._wire(page)
         if not self.list_payloads:
             page.goto(self.login_url, wait_until="networkidle")
@@ -239,7 +266,7 @@ class Scraper(InstitutionScraper):
         include = [s.lower() for s in self.options.get("include", [])]
         if include:
             docs = [d for d in docs if any(s in d["title"].lower() for s in include)]
-        docs = [d for d in docs if d["day"] >= since]
+        docs = [d for d in docs if since is None or d["day"] >= since]
         log.info("USAA: %d documents listed, %d since %s", self.raw["extracted"], len(docs), since)
 
         manifest_path = dest / ".usaa_downloaded.json"
@@ -279,7 +306,11 @@ class Scraper(InstitutionScraper):
             target.write_bytes(body)
             target.with_name(target.name + ".meta.json").write_text(json.dumps({
                 "institution": self.institution, "title": d["title"], "account": d["account"],
-                "date": d["day"].isoformat(), "content_id": d["content_id"], "source": "usaa",
+                "last4": d.get("last4"), "date": d["day"].isoformat(), "content_id": d["content_id"],
+                "category": d.get("category"), "subcategory": d.get("subcategory"),
+                # folder label when no account matches and no last-4 is known
+                "label_hint": (d.get("category") or "").lower() or None,
+                "source": "usaa",
             }))
             saved.append(target)
             log.info("USAA: downloaded %s", target.name)

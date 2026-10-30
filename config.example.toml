@@ -71,7 +71,7 @@ enabled = true
 # module = "usaa"
 # enabled = true
 # headless = false              # keep false: USAA bot detection
-# statements_since = "2025-01-01"
+# statements_since = "2021-01-01"   # omit to take everything the portal lists
 # [provider.options]
 # cdp_url = "http://127.0.0.1:9222"  # attach to your own running browser, started with
 #                                    # --remote-debugging-port=9222  (recommended for USAA)

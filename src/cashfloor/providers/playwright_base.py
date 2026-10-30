@@ -61,15 +61,15 @@ class InstitutionScraper(ABC):
         """Return accounts with current balance (cents) and, where the portal
         shows them, statement_balance / minimum_payment / due_date."""
 
-    def fetch_transactions(self, page: Page, account: Account, since: date) -> list[Transaction]:
+    def fetch_transactions(self, page: Page, account: Account, since: date | None) -> list[Transaction]:
         return []
 
-    def download_statements(self, page: Page, account: Account, since: date, dest: Path) -> list[Path]:
+    def download_statements(self, page: Page, account: Account, since: date | None, dest: Path) -> list[Path]:
         """Download statement PDFs newer than `since` into `dest`.  Return paths.
         Naming is irrelevant here; the statement pipeline renames."""
         return []
 
-    def download_all_statements(self, page: Page, since: date, dest: Path) -> list[Path]:
+    def download_all_statements(self, page: Page, since: date | None, dest: Path) -> list[Path]:
         """For statement-only plugins (balances come from elsewhere): download
         every statement newer than `since` regardless of account.  Called after
         the per-account loop."""
@@ -137,7 +137,7 @@ class PlaywrightProvider(Provider):
         creds = secrets.get_json_secret(self.pc.secret) if self.pc.secret else {}
         scraper = load_scraper_class(self.pc.module)(creds or {}, self.pc.options)
         res = SyncResult(provider=self.name)
-        since = self.pc.statements_since or date(date.today().year - 1, 1, 1)
+        since = self.pc.statements_since  # None = everything the portal has
         now = datetime.now(UTC)
 
         with sync_playwright() as p:
