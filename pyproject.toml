@@ -41,6 +41,8 @@ cashfloor = "cashfloor.cli:app"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/cashfloor"]
+# templates and static assets ship with the package
+artifacts = ["src/cashfloor/web/templates/*", "src/cashfloor/web/static/*"]
 
 [tool.ruff]
 line-length = 120

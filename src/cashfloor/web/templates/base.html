@@ -4,6 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>cashfloor</title>
+<link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+<link rel="alternate icon" href="/favicon.ico" sizes="16x16 32x32 48x48">
+<link rel="apple-touch-icon" href="/static/icon-180.png">
+<link rel="manifest" href="/static/manifest.webmanifest">
+<meta name="theme-color" content="#2f6df6">
 <style>
   :root { --bg:#0f1115; --panel:#171a21; --line:#2a2f3a; --fg:#e6e8ee; --dim:#8b93a7; --good:#3ddc97; --bad:#ff6b6b; --warn:#ffc857; --accent:#6ea8fe; }
   @media (prefers-color-scheme: light) { :root { --bg:#f6f7fa; --panel:#fff; --line:#dde1ea; --fg:#13161c; --dim:#5b6475; } }
@@ -11,7 +16,8 @@
   body { margin:0; font:15px/1.45 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background:var(--bg); color:var(--fg) }
   header { display:flex; gap:20px; align-items:center; padding:12px 24px; border-bottom:1px solid var(--line); background:var(--panel) }
   header a { color:var(--dim); text-decoration:none } header a.active, header a:hover { color:var(--fg) }
-  header .brand { font-weight:700; color:var(--fg); letter-spacing:.3px }
+  header .brand { font-weight:700; color:var(--fg); letter-spacing:.3px; display:inline-flex; align-items:center; gap:8px }
+  header .brand svg { width:22px; height:22px; color:var(--accent) }
   main { max-width:1100px; margin:0 auto; padding:20px 24px }
   .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:14px; margin-bottom:18px }
   .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:14px 16px }
@@ -37,7 +43,7 @@
 </head>
 <body>
 <header>
-  <span class="brand">cashfloor</span>
+  <span class="brand"><svg viewBox="0 0 512 512" aria-hidden="true"><line x1="72" y1="372" x2="440" y2="372" stroke="currentColor" stroke-width="40" stroke-linecap="round" opacity="0.55"/><path d="M72 140 C 128 140, 150 220, 196 300 C 226 354, 248 372, 268 372 C 296 372, 328 284, 364 236 C 392 198, 414 188, 440 188" fill="none" stroke="currentColor" stroke-width="48" stroke-linecap="round" stroke-linejoin="round"/><circle cx="268" cy="372" r="44" fill="currentColor"/></svg>cashfloor</span>
   <a href="/" class="{{ 'active' if request.url.path == '/' else '' }}">Dashboard</a>
   <a href="/accounts" class="{{ 'active' if request.url.path.startswith('/accounts') else '' }}">Accounts</a>
   <a href="/items" class="{{ 'active' if request.url.path.startswith('/items') else '' }}">Scheduled</a>

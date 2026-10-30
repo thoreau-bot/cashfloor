@@ -7,7 +7,8 @@ from datetime import date
 from pathlib import Path
 
 from fastapi import FastAPI, Form, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from .. import secrets
@@ -18,6 +19,7 @@ from ..projection.engine import project
 from ..sync import run_sync
 
 TEMPLATES = Path(__file__).parent / "templates"
+STATIC = Path(__file__).parent / "static"
 
 
 def svg_chart(days: list[dict], buffer: float, width: int = 900, height: int = 260) -> str:
@@ -64,6 +66,12 @@ def create_app(cfg: Config, with_scheduler: bool = False) -> FastAPI:
     app = FastAPI(title="cashfloor", docs_url="/api/docs")
     templates = Jinja2Templates(directory=str(TEMPLATES))
     templates.env.filters["money"] = lambda c: f"{from_cents(c):,.2f}" if c is not None else ""
+
+    app.mount("/static", StaticFiles(directory=str(STATIC)), name="static")
+
+    @app.get("/favicon.ico", include_in_schema=False)
+    def favicon():
+        return FileResponse(STATIC / "favicon.ico")
 
     if with_scheduler:
         from ..scheduler import start_scheduler
