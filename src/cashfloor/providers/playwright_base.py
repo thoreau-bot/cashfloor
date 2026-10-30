@@ -19,6 +19,7 @@ Plugin contract: subclass `InstitutionScraper` and implement `login`,
 from __future__ import annotations
 
 import importlib
+import logging
 from abc import ABC, abstractmethod
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -27,6 +28,8 @@ from typing import TYPE_CHECKING, Any
 from .. import secrets
 from ..models import Account, Transaction
 from .base import Provider, SyncResult
+
+log = logging.getLogger("cashfloor.playwright")
 
 if TYPE_CHECKING:  # playwright is an optional dependency
     from playwright.sync_api import BrowserContext, Page
@@ -137,25 +140,41 @@ class PlaywrightProvider(Provider):
         now = datetime.now(UTC)
 
         with sync_playwright() as p:
-            launch_kwargs: dict[str, Any] = dict(
-                user_data_dir=str(self._profile_dir()),
-                headless=self.pc.headless,
-                accept_downloads=True,
-                viewport={"width": 1280, "height": 900},
-            )
-            # "chrome" / "msedge" uses the real installed browser, which gets
-            # through bot detection far more often than bundled Chromium.
-            if self.pc.options.get("executable_path"):
-                # Any Chromium-based browser (Vivaldi, Brave, Chromium) by path.
-                launch_kwargs["executable_path"] = str(Path(self.pc.options["executable_path"]).expanduser())
-            elif self.pc.options.get("channel"):
-                launch_kwargs["channel"] = self.pc.options["channel"]
-            ctx: BrowserContext = p.chromium.launch_persistent_context(**launch_kwargs)
+            browser = None
+            cdp_url = self.pc.options.get("cdp_url")
+            if cdp_url:
+                # Attach to a browser the user started themselves with
+                # --remote-debugging-port=NNNN (Vivaldi, Brave, Chrome ...).
+                # Runs in the user's own browser with their existing login;
+                # nothing is launched, disguised, or closed by us.
+                log.info("%s: connecting to your browser at %s", self.pc.name, cdp_url)
+                browser = p.chromium.connect_over_cdp(cdp_url)
+                ctx: BrowserContext = browser.contexts[0] if browser.contexts else browser.new_context()
+            else:
+                launch_kwargs: dict[str, Any] = dict(
+                    user_data_dir=str(self._profile_dir()),
+                    headless=self.pc.headless,
+                    accept_downloads=True,
+                    viewport={"width": 1280, "height": 900},
+                )
+                # "chrome" / "msedge" uses the real installed browser.
+                if self.pc.options.get("executable_path"):
+                    launch_kwargs["executable_path"] = str(Path(self.pc.options["executable_path"]).expanduser())
+                elif self.pc.options.get("channel"):
+                    launch_kwargs["channel"] = self.pc.options["channel"]
+                log.info("%s: launching %s (profile %s)", self.pc.name,
+                         launch_kwargs.get("channel") or launch_kwargs.get("executable_path") or "bundled Chromium",
+                         self._profile_dir())
+                ctx = p.chromium.launch_persistent_context(**launch_kwargs)
             try:
                 page = ctx.new_page()
+                log.info("%s: opening %s", self.pc.name, scraper.login_url)
                 page.goto(scraper.login_url, wait_until="domcontentloaded")
                 if not scraper.is_logged_in(page):
+                    log.info("%s: not logged in — please sign in in the browser window (waiting up to %ss)",
+                             self.pc.name, scraper.options.get("login_timeout_s", 300))
                     scraper.login(page)
+                log.info("%s: logged in; fetching", self.pc.name)
                 for acct in scraper.fetch_accounts(page):
                     acct.provider = self.name
                     acct.institution = acct.institution or scraper.institution
@@ -176,7 +195,12 @@ class PlaywrightProvider(Provider):
                 except Exception as e:  # noqa: BLE001
                     res.errors.append(f"statements failed: {e}")
             finally:
-                ctx.close()
+                if browser is not None:
+                    page.close()  # leave the user's browser running; just drop our tab
+                    browser.close()  # disconnects CDP only
+                else:
+                    ctx.close()
+        log.info("%s: %d statement file(s) downloaded", self.pc.name, len(res.statement_files))
         if scraper.raw:
             res.raw = scraper.raw
         return res

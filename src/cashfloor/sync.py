@@ -68,6 +68,9 @@ def run_sync(cfg: Config, db: Database, only: str | None = None, today: date | N
     cfg.ensure_dirs()
     today = today or date.today()
     summary = SyncSummary()
+    if only and not any(pc.name == only for pc in cfg.provider):
+        names = ", ".join(pc.name for pc in cfg.provider) or "(none)"
+        raise ValueError(f"no provider named {only!r} in config; configured providers: {names}")
 
     for pc in cfg.provider:
         if not pc.enabled or (only and pc.name != only):

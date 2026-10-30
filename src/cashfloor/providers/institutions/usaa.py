@@ -34,8 +34,9 @@ Config:
     headless = false            # USAA's bot detection: keep headful, use real Chrome
     statements_since = "2025-01-01"
     [provider.options]
-    channel = "chrome"          # installed Google Chrome / "msedge"; or instead:
-    # executable_path = "C:/Users/you/AppData/Local/Vivaldi/Application/vivaldi.exe"
+    cdp_url = "http://127.0.0.1:9222"   # attach to YOUR browser, started with
+                                        # --remote-debugging-port=9222 (recommended for USAA)
+    # channel = "chrome"                # or launch installed Chrome in its own profile
     # include = ["STATEMENT"]   # only titles containing one of these (case-insensitive); default: all
     # login_timeout_s = 300     # how long to wait for you to finish logging in
 
@@ -47,6 +48,7 @@ the session afterwards.
 from __future__ import annotations
 
 import json
+import logging
 import re
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -67,6 +69,7 @@ GUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]
 ISO_DATE_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})")
 US_DATE_RE = re.compile(r"^(\d{1,2})/(\d{1,2})/(\d{4})$")
 AUTH_HEADERS = ("authorization", "api-key")
+log = logging.getLogger("cashfloor.usaa")
 
 # Field-name hints.  The list JSON's exact schema wasn't captured (it would
 # have meant exporting a live session token), so extraction is heuristic
@@ -236,6 +239,7 @@ class Scraper(InstitutionScraper):
         if include:
             docs = [d for d in docs if any(s in d["title"].lower() for s in include)]
         docs = [d for d in docs if d["day"] >= since]
+        log.info("USAA: %d documents listed, %d since %s", self.raw["extracted"], len(docs), since)
 
         manifest_path = dest / ".usaa_downloaded.json"
         done: set[str] = set(json.loads(manifest_path.read_text())) if manifest_path.exists() else set()
@@ -257,6 +261,7 @@ class Scraper(InstitutionScraper):
             target = dest / safe_name(d)
             target.write_bytes(body)
             saved.append(target)
+            log.info("USAA: downloaded %s", target.name)
             done.add(key)
             manifest_path.write_text(json.dumps(sorted(done)))
             page.wait_for_timeout(int(self.options.get("delay_ms", 800)))  # be polite
