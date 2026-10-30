@@ -29,15 +29,23 @@ server-rendered dashboard bound to `127.0.0.1`. No cloud, no telemetry, MIT.
 SimpleFIN does not carry statement PDFs or due dates, so cards/loans/utilities
 get those from parsed statements (scraped or dropped) or from a manual entry.
 
-## Quick start
+## Quick start (GUI)
 
-**Windows:** double-click `scripts\setup.bat` once (creates `.venv`, installs
-everything, runs the tests, writes `config.toml`). From then on, double-click
-`scripts\shell.bat` to get a Command Prompt with the environment active.
+1. **Windows:** double-click `scripts\setup.bat` once. **Linux/macOS:** `scripts/setup.sh`.
+2. Double-click `scripts\serve.bat` (or `scripts/serve.sh`). The dashboard opens at `http://127.0.0.1:8477`.
+3. **Settings** → paste your SimpleFIN setup token → **Connect**.
+4. **Sync now**, then on **Accounts** give each account a short key, a type, and tick *pool* on the ones you spend from.
+5. **Settings** → pick the default payment account and a safety buffer.
+6. **Scheduled** → confirm the paychecks/bills the detector proposed; add any it missed.
 
-**Linux / macOS:** `scripts/setup.sh` once, then `scripts/shell.sh`.
+Everything the GUI does is also available from the CLI (below) for scripting
+and headless servers; `config.toml` is optional and documents every knob.
+Values saved in the GUI are stored in the database and override the file.
 
-Or by hand:
+## Quick start (CLI)
+
+`scripts\shell.bat` / `scripts/shell.sh` opens a prompt with the environment
+active. Or by hand:
 
 ```bash
 git clone <this repo> && cd cashfloor

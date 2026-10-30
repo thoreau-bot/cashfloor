@@ -110,11 +110,55 @@ def find_config_path(explicit: str | os.PathLike | None = None) -> Path | None:
     return None
 
 
+def default_providers() -> list[ProviderConfig]:
+    """What you get with no config.toml at all: SimpleFIN + the inbox folder."""
+    return [
+        ProviderConfig(name="simplefin", kind="simplefin", secret="simplefin_access_url"),
+        ProviderConfig(name="inbox", kind="filedrop"),
+    ]
+
+
+# Settings the GUI may override (stored in the DB `meta` table, key = dotted path).
+# Values are strings in the DB; pydantic coerces them on apply.
+GUI_SETTINGS: dict[str, str] = {
+    "projection.horizon_days": "Days to project forward",
+    "projection.safety_buffer": "Never let the pool dip below this; discretionary = floor − buffer",
+    "projection.default_payment_account": "Key of the account that pays cards/loans/utilities",
+    "projection.card_payment_mode": "Pay 'statement' balance or 'minimum' on due dates",
+    "projection.estimate_future_card_payments": "Repeat the last card payment monthly through the horizon",
+    "recurring.min_occurrences": "Hits before a recurring pattern is proposed",
+    "recurring.amount_tolerance": "Allowed amount variance (fraction) within a series",
+    "scheduler.daily_sync_time": "Local time (HH:MM) for the daily sync",
+    "general.timezone": "IANA time zone for 'today' and the scheduler",
+    "simplefin.lookback_days": "Days of history to request from SimpleFIN each sync",
+}
+
+
+def apply_overrides(cfg: Config, overrides: dict[str, str]) -> Config:
+    """Return a copy of cfg with dotted-key overrides applied and validated."""
+    cfg = cfg.model_copy(deep=True)
+    sections: dict[str, dict[str, str]] = {}
+    for key, value in overrides.items():
+        if key not in GUI_SETTINGS or value is None or value == "":
+            continue
+        section, field = key.split(".", 1)
+        sections.setdefault(section, {})[field] = value
+    for section, fields in sections.items():
+        if section == "simplefin":
+            for pc in cfg.provider:
+                if pc.kind == "simplefin":
+                    pc.lookback_days = int(fields.get("lookback_days", pc.lookback_days))
+            continue
+        model = getattr(cfg, section)
+        setattr(cfg, section, type(model).model_validate({**model.model_dump(), **fields}))
+    return cfg
+
+
 def load_config(path: str | os.PathLike | None = None) -> Config:
     """Load config from TOML.  Missing file -> defaults (useful for tests/first run)."""
     resolved = find_config_path(path)
     if resolved is None or not resolved.exists():
-        cfg = Config()
+        cfg = Config(provider=default_providers())
     else:
         with open(resolved, "rb") as f:
             raw = tomllib.load(f)

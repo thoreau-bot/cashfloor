@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block body %}
+{% if msg %}<div class="card good">{{ msg }}</div>{% endif %}
+{% if err %}<div class="card bad">{{ err }}</div>{% endif %}
+
+<h2>SimpleFIN</h2>
+<div class="card">
+  {% if simplefin is none %}
+    <p class="warn">The OS keyring isn't available on this machine, so the SimpleFIN access URL can't be stored here. On a headless server, see <code>docs/DEPLOY_VM.md</code>.</p>
+  {% elif simplefin %}
+    <p><span class="good">●</span> Connected. Balances and transactions will be pulled on every sync.</p>
+    <form method="post" action="/settings/simplefin/disconnect" class="inline"><button class="secondary">Disconnect</button></form>
+  {% else %}
+    <p><span class="warn">●</span> Not connected.</p>
+    <ol class="small muted">
+      <li>Sign in at <code>bridge.simplefin.org</code> and link your banks under <em>Financial Institutions</em>.</li>
+      <li>Under <em>Apps → New Connection</em>, name it <code>cashfloor</code> and click <em>Create Setup Token</em>.</li>
+      <li>Paste the token here. It's single-use; cashfloor exchanges it for a permanent read-only access URL stored in your OS keyring.</li>
+    </ol>
+    <form method="post" action="/settings/simplefin">
+      <input name="setup_token" placeholder="Paste setup token" size="60" required autocomplete="off">
+      <button>Connect</button>
+    </form>
+  {% endif %}
+</div>
+
+<h2>Projection &amp; sync</h2>
+<p class="muted small">Values saved here are stored in the database and override <code>{{ config_path }}</code>. The right-hand column shows what the config file (or the built-in default) says.</p>
+<div class="card">
+<form method="post" action="/settings">
+<table>
+  <tr><th>Setting</th><th>Value</th><th>What it does</th><th>Config file</th></tr>
+
+  <tr>
+    <td>Default payment account</td>
+    <td><select name="projection.default_payment_account">
+      <option value="" {{ 'selected' if not current['projection.default_payment_account'] }}>(first pool account)</option>
+      {% for k in account_keys %}<option value="{{ k }}" {{ 'selected' if k == current['projection.default_payment_account'] }}>{{ k }}</option>{% endfor %}
+    </select></td>
+    <td class="small muted">{{ help['projection.default_payment_account'] }}. Give accounts a key on the <a href="/accounts">Accounts</a> page first.</td>
+    <td class="small muted">{{ base['projection.default_payment_account'] or '—' }}</td>
+  </tr>
+  <tr>
+    <td>Safety buffer</td>
+    <td><input name="projection.safety_buffer" value="{{ current['projection.safety_buffer'] }}" size="10"></td>
+    <td class="small muted">{{ help['projection.safety_buffer'] }}</td>
+    <td class="small muted">{{ base['projection.safety_buffer'] }}</td>
+  </tr>
+  <tr>
+    <td>Horizon (days)</td>
+    <td><input name="projection.horizon_days" value="{{ current['projection.horizon_days'] }}" size="6"></td>
+    <td class="small muted">{{ help['projection.horizon_days'] }}</td>
+    <td class="small muted">{{ base['projection.horizon_days'] }}</td>
+  </tr>
+  <tr>
+    <td>Card payment mode</td>
+    <td><select name="projection.card_payment_mode">
+      {% for m in ['statement', 'minimum'] %}<option value="{{ m }}" {{ 'selected' if m == current['projection.card_payment_mode'] }}>{{ m }}</option>{% endfor %}
+    </select></td>
+    <td class="small muted">{{ help['projection.card_payment_mode'] }}</td>
+    <td class="small muted">{{ base['projection.card_payment_mode'] }}</td>
+  </tr>
+  <tr>
+    <td>Estimate future card payments</td>
+    <td><input type="checkbox" name="projection.estimate_future_card_payments" value="true" {{ 'checked' if current['projection.estimate_future_card_payments'] }}></td>
+    <td class="small muted">{{ help['projection.estimate_future_card_payments'] }}</td>
+    <td class="small muted">{{ base['projection.estimate_future_card_payments'] }}</td>
+  </tr>
+  <tr>
+    <td>Recurring: min occurrences</td>
+    <td><input name="recurring.min_occurrences" value="{{ current['recurring.min_occurrences'] }}" size="4"></td>
+    <td class="small muted">{{ help['recurring.min_occurrences'] }}</td>
+    <td class="small muted">{{ base['recurring.min_occurrences'] }}</td>
+  </tr>
+  <tr>
+    <td>Recurring: amount tolerance</td>
+    <td><input name="recurring.amount_tolerance" value="{{ current['recurring.amount_tolerance'] }}" size="6"></td>
+    <td class="small muted">{{ help['recurring.amount_tolerance'] }}</td>
+    <td class="small muted">{{ base['recurring.amount_tolerance'] }}</td>
+  </tr>
+  <tr>
+    <td>SimpleFIN lookback (days)</td>
+    <td><input name="simplefin.lookback_days" value="{{ current['simplefin.lookback_days'] }}" size="4"></td>
+    <td class="small muted">{{ help['simplefin.lookback_days'] }}</td>
+    <td class="small muted">{{ base['simplefin.lookback_days'] }}</td>
+  </tr>
+  <tr>
+    <td>Daily sync time</td>
+    <td><input name="scheduler.daily_sync_time" value="{{ current['scheduler.daily_sync_time'] }}" size="6"></td>
+    <td class="small muted">{{ help['scheduler.daily_sync_time'] }} (takes effect on restart)</td>
+    <td class="small muted">{{ base['scheduler.daily_sync_time'] }}</td>
+  </tr>
+  <tr>
+    <td>Time zone</td>
+    <td><input name="general.timezone" value="{{ current['general.timezone'] }}" size="24"></td>
+    <td class="small muted">{{ help['general.timezone'] }}</td>
+    <td class="small muted">{{ base['general.timezone'] }}</td>
+  </tr>
+</table>
+<p><button>Save</button></p>
+</form>
+<form method="post" action="/settings/reset" class="inline"><button class="secondary">Reset all to config file values</button></form>
+</div>
+{% endblock %}

@@ -10,7 +10,8 @@ from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from ..config import Config
+from .. import secrets
+from ..config import GUI_SETTINGS, Config, apply_overrides
 from ..db import Database
 from ..models import AccountType, Frequency, ItemSource, ScheduledItem, from_cents, to_cents
 from ..projection.engine import project
@@ -72,11 +73,29 @@ def create_app(cfg: Config, with_scheduler: bool = False) -> FastAPI:
     def db() -> Database:
         return Database(cfg.db_path)
 
+    def effective(d: Database) -> Config:
+        """config.toml + GUI-stored overrides."""
+        return apply_overrides(cfg, d.get_settings())
+
+    def simplefin_secret_name() -> str:
+        for pc in cfg.provider:
+            if pc.kind == "simplefin":
+                return pc.secret or "simplefin_access_url"
+        return "simplefin_access_url"
+
+    def simplefin_connected() -> bool | None:
+        """True/False, or None if the keyring itself is unavailable."""
+        try:
+            return bool(secrets.get_secret(simplefin_secret_name()))
+        except Exception:  # noqa: BLE001 — no keyring backend (headless box)
+            return None
+
     @app.get("/", response_class=HTMLResponse)
     def dashboard(request: Request):
         d = db()
         try:
-            r = project(d, cfg)
+            c = effective(d)
+            r = project(d, c)
             accounts = d.list_accounts()
             pending = [i for i in d.list_items() if not i.confirmed]
             syncs = d.last_syncs(8)
@@ -84,19 +103,115 @@ def create_app(cfg: Config, with_scheduler: bool = False) -> FastAPI:
             d.close()
         data = r.to_dict()
         upcoming = [x for x in data["days"] if x["events"]][:25]
+        pool = [a for a in accounts if a.in_pool]
+        setup_hints = []
+        if not accounts:
+            setup_hints.append(("Connect SimpleFIN or drop files in the inbox, then sync.", "/settings"))
+        elif not pool:
+            setup_hints.append(("No account is in the cash pool yet — tick 'pool' on the accounts you spend from.", "/accounts"))
+        if accounts and not c.projection.default_payment_account:
+            setup_hints.append(("Choose which account pays your cards (default payment account).", "/settings"))
         return templates.TemplateResponse(request, "dashboard.html", {
             "p": data, "chart": svg_chart(data["days"], data["safety_buffer"]), "accounts": accounts,
-            "pending": pending, "upcoming": upcoming, "syncs": syncs, "cfg": cfg,
+            "pending": pending, "upcoming": upcoming, "syncs": syncs, "cfg": c, "setup_hints": setup_hints,
         })
 
     @app.post("/sync")
     def sync_now():
         d = db()
         try:
-            run_sync(cfg, d)
+            run_sync(effective(d), d)
         finally:
             d.close()
         return RedirectResponse("/", status_code=303)
+
+    # ---- settings ----
+    @app.get("/settings", response_class=HTMLResponse)
+    def settings(request: Request, msg: str = "", err: str = ""):
+        d = db()
+        try:
+            stored = d.get_settings()
+            c = effective(d)
+            keys = [a.key for a in d.list_accounts() if a.key]
+        finally:
+            d.close()
+        # Values as config.toml (or defaults) would have them, for the hint column.
+        base = {
+            "projection.horizon_days": cfg.projection.horizon_days,
+            "projection.safety_buffer": cfg.projection.safety_buffer,
+            "projection.default_payment_account": cfg.projection.default_payment_account or "",
+            "projection.card_payment_mode": cfg.projection.card_payment_mode,
+            "projection.estimate_future_card_payments": cfg.projection.estimate_future_card_payments,
+            "recurring.min_occurrences": cfg.recurring.min_occurrences,
+            "recurring.amount_tolerance": cfg.recurring.amount_tolerance,
+            "scheduler.daily_sync_time": cfg.scheduler.daily_sync_time,
+            "general.timezone": cfg.general.timezone,
+            "simplefin.lookback_days": next((pc.lookback_days for pc in cfg.provider if pc.kind == "simplefin"), 60),
+        }
+        current = {
+            "projection.horizon_days": c.projection.horizon_days,
+            "projection.safety_buffer": c.projection.safety_buffer,
+            "projection.default_payment_account": c.projection.default_payment_account or "",
+            "projection.card_payment_mode": c.projection.card_payment_mode,
+            "projection.estimate_future_card_payments": c.projection.estimate_future_card_payments,
+            "recurring.min_occurrences": c.recurring.min_occurrences,
+            "recurring.amount_tolerance": c.recurring.amount_tolerance,
+            "scheduler.daily_sync_time": c.scheduler.daily_sync_time,
+            "general.timezone": c.general.timezone,
+            "simplefin.lookback_days": next((pc.lookback_days for pc in c.provider if pc.kind == "simplefin"), 60),
+        }
+        return templates.TemplateResponse(request, "settings.html", {
+            "help": GUI_SETTINGS, "base": base, "current": current, "stored": stored, "account_keys": keys,
+            "simplefin": simplefin_connected(), "config_path": str(cfg.config_path or "(no config.toml — using defaults)"),
+            "msg": msg, "err": err,
+        })
+
+    @app.post("/settings")
+    async def settings_save(request: Request):
+        form = await request.form()
+        d = db()
+        try:
+            for key in GUI_SETTINGS:
+                if key == "projection.estimate_future_card_payments":
+                    val = "true" if form.get(key) else "false"
+                else:
+                    val = str(form.get(key, "")).strip()
+                d.set_setting(key, val)
+            # validate by applying; roll back on error
+            try:
+                effective(d)
+            except Exception as e:  # noqa: BLE001
+                return RedirectResponse(f"/settings?err=Invalid+value:+{str(e)[:120]}", status_code=303)
+        finally:
+            d.close()
+        return RedirectResponse("/settings?msg=Saved", status_code=303)
+
+    @app.post("/settings/reset")
+    def settings_reset():
+        d = db()
+        try:
+            for key in GUI_SETTINGS:
+                d.set_setting(key, None)
+        finally:
+            d.close()
+        return RedirectResponse("/settings?msg=Reset+to+config.toml+values", status_code=303)
+
+    @app.post("/settings/simplefin")
+    def settings_simplefin(setup_token: str = Form(...)):
+        from ..providers.simplefin import claim_access_url
+
+        token = setup_token.strip().strip("<>")
+        try:
+            url = claim_access_url(token)
+            secrets.set_secret(simplefin_secret_name(), url)
+        except Exception as e:  # noqa: BLE001
+            return RedirectResponse(f"/settings?err=SimpleFIN:+{str(e)[:160]}", status_code=303)
+        return RedirectResponse("/settings?msg=SimpleFIN+connected.+Press+Sync+now.", status_code=303)
+
+    @app.post("/settings/simplefin/disconnect")
+    def settings_simplefin_disconnect():
+        secrets.delete_secret(simplefin_secret_name())
+        return RedirectResponse("/settings?msg=SimpleFIN+disconnected", status_code=303)
 
     @app.get("/accounts", response_class=HTMLResponse)
     def accounts(request: Request):
@@ -184,7 +299,7 @@ def create_app(cfg: Config, with_scheduler: bool = False) -> FastAPI:
     def api_projection():
         d = db()
         try:
-            return JSONResponse(project(d, cfg).to_dict())
+            return JSONResponse(project(d, effective(d)).to_dict())
         finally:
             d.close()
 
@@ -192,7 +307,7 @@ def create_app(cfg: Config, with_scheduler: bool = False) -> FastAPI:
     def api_discretionary():
         d = db()
         try:
-            r = project(d, cfg)
+            r = project(d, effective(d))
         finally:
             d.close()
         return {"discretionary": from_cents(r.discretionary), "floor": from_cents(r.floor),

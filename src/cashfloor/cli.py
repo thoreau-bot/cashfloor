@@ -12,7 +12,7 @@ from rich import print as rprint
 from rich.table import Table
 
 from . import __version__, secrets
-from .config import load_config
+from .config import apply_overrides, load_config
 from .db import Database
 from .models import AccountType, Frequency, ItemSource, ScheduledItem, from_cents, to_cents
 from .projection.engine import explain, project
@@ -42,9 +42,12 @@ def _main(
 
 
 def _db() -> Database:
+    """Open the DB and fold GUI-stored settings into the active config."""
     cfg = _state["cfg"]
     cfg.ensure_dirs()
-    return Database(cfg.db_path)
+    db = Database(cfg.db_path)
+    _state["cfg"] = apply_overrides(cfg, db.get_settings())
+    return db
 
 
 @app.command()
@@ -68,7 +71,7 @@ def sync(only: str | None = typer.Option(None, help="Run just this provider name
     """Fetch from every enabled provider, archive statements, refresh proposals."""
     db = _db()
     try:
-        s = run_sync(_state["cfg"], db, only=only)
+        s = run_sync(_state["cfg"], db, only=only)  # _db() applied GUI overrides first
     finally:
         db.close()
     rprint(f"ok: {s.providers_ok}  failed: {s.providers_failed}")
@@ -81,7 +84,8 @@ def sync(only: str | None = typer.Option(None, help="Run just this provider name
 @app.command()
 def ingest(paths: list[Path] = typer.Argument(..., help="PDF files or folders"), copy: bool = typer.Option(False, help="Copy instead of move")) -> None:
     """File statement PDFs without running a provider sync."""
-    cfg, db = _state["cfg"], _db()
+    db = _db()
+    cfg = _state["cfg"]
     n = 0
     try:
         for p in paths:
@@ -125,16 +129,27 @@ def discretionary() -> None:
 
 
 @app.command()
-def serve(host: str | None = None, port: int | None = None, no_scheduler: bool = False) -> None:
+def serve(
+    host: str | None = None,
+    port: int | None = None,
+    no_scheduler: bool = False,
+    open_browser: bool = typer.Option(False, "--open", help="Open the dashboard in your browser"),
+) -> None:
     """Run the local web dashboard (and the daily sync scheduler)."""
+    import threading
+    import webbrowser
+
     import uvicorn
 
     from .web.app import create_app
 
     cfg = _state["cfg"]
     cfg.ensure_dirs()
+    h, p = host or cfg.web.host, port or cfg.web.port
     application = create_app(cfg, with_scheduler=not no_scheduler)
-    uvicorn.run(application, host=host or cfg.web.host, port=port or cfg.web.port, log_level="info")
+    if open_browser:
+        threading.Timer(1.5, lambda: webbrowser.open(f"http://{h}:{p}/")).start()
+    uvicorn.run(application, host=h, port=p, log_level="info", proxy_headers=True, forwarded_allow_ips="127.0.0.1")
 
 
 # -- accounts ---------------------------------------------------------------

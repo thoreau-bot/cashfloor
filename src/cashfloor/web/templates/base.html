@@ -42,6 +42,7 @@
   <a href="/accounts" class="{{ 'active' if request.url.path.startswith('/accounts') else '' }}">Accounts</a>
   <a href="/items" class="{{ 'active' if request.url.path.startswith('/items') else '' }}">Scheduled</a>
   <a href="/statements" class="{{ 'active' if request.url.path.startswith('/statements') else '' }}">Statements</a>
+  <a href="/settings" class="{{ 'active' if request.url.path.startswith('/settings') else '' }}">Settings</a>
   <span style="flex:1"></span>
   <form method="post" action="/sync" class="inline"><button>Sync now</button></form>
 </header>

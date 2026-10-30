@@ -170,6 +170,20 @@ class Database:
             self.conn.rollback()
             raise
 
+    # -- settings (GUI overrides of config.toml) ---------------------------
+    def get_settings(self) -> dict[str, str]:
+        return {
+            r["key"][4:]: r["value"]
+            for r in self.conn.execute("SELECT key, value FROM meta WHERE key LIKE 'set:%'")
+        }
+
+    def set_setting(self, key: str, value: str | None) -> None:
+        with self.tx() as c:
+            if value is None or value == "":
+                c.execute("DELETE FROM meta WHERE key=?", (f"set:{key}",))
+            else:
+                c.execute("INSERT OR REPLACE INTO meta(key, value) VALUES (?, ?)", (f"set:{key}", value))
+
     # -- accounts ----------------------------------------------------------
     @staticmethod
     def _row_to_account(r: sqlite3.Row) -> Account:
