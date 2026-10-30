@@ -1,18 +1,57 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#2f6df6"/>
-      <stop offset="1" stop-color="#1b3fa6"/>
+    <!-- tile: deep blue with a soft light from the top-left -->
+    <linearGradient id="tile" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3b7cff"/>
+      <stop offset="0.55" stop-color="#2563eb"/>
+      <stop offset="1" stop-color="#1e3a8a"/>
     </linearGradient>
+    <radialGradient id="glow" cx="0.22" cy="0.12" r="0.9">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.22"/>
+      <stop offset="0.45" stop-color="#ffffff" stop-opacity="0.04"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="edge" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0.06"/>
+    </linearGradient>
+    <!-- floor bar: amber with a slight warm gradient -->
+    <linearGradient id="floor" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffd27a"/>
+      <stop offset="1" stop-color="#f5b94a"/>
+    </linearGradient>
+    <!-- soft shadow under the balance line -->
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="9" flood-color="#0b1f5c" flood-opacity="0.35"/>
+    </filter>
+    <filter id="shadowSoft" x="-10%" y="-10%" width="120%" height="140%">
+      <feDropShadow dx="0" dy="6" stdDeviation="6" flood-color="#0b1f5c" flood-opacity="0.28"/>
+    </filter>
+    <clipPath id="tileClip"><rect x="16" y="16" width="480" height="480" rx="116"/></clipPath>
   </defs>
+
   <!-- tile -->
-  <rect x="16" y="16" width="480" height="480" rx="112" fill="url(#bg)"/>
-  <!-- floor: the lowest point the balance will touch -->
-  <line x1="104" y1="356" x2="408" y2="356" stroke="#ffc857" stroke-width="28" stroke-linecap="round"/>
-  <!-- balance line: dips to the floor, recovers -->
-  <path d="M104 168 C 150 168, 170 236, 206 300 C 232 346, 252 356, 268 356 C 292 356, 320 280, 352 236 C 376 204, 392 196, 408 196"
-        fill="none" stroke="#ffffff" stroke-width="36" stroke-linecap="round" stroke-linejoin="round"/>
-  <!-- floor marker -->
-  <circle cx="268" cy="356" r="30" fill="#ffffff"/>
-  <circle cx="268" cy="356" r="16" fill="#ff6b6b"/>
+  <rect x="16" y="16" width="480" height="480" rx="116" fill="url(#tile)"/>
+  <rect x="16" y="16" width="480" height="480" rx="116" fill="url(#glow)"/>
+  <!-- inner edge highlight -->
+  <rect x="19" y="19" width="474" height="474" rx="113" fill="none" stroke="url(#edge)" stroke-width="3"/>
+
+  <g clip-path="url(#tileClip)">
+    <!-- the floor: the lowest point the balance will reach -->
+    <rect x="100" y="340" width="312" height="30" rx="15" fill="url(#floor)" filter="url(#shadowSoft)"/>
+
+    <!-- the balance: a steep fall, a touch on the floor, a gentler recovery ending higher than it began -->
+    <path d="M110 176
+             C 146 176, 170 232, 200 292
+             C 222 336, 242 355, 262 355
+             C 288 355, 314 286, 346 238
+             C 372 200, 390 188, 404 186"
+          fill="none" stroke="#ffffff" stroke-width="40" stroke-linecap="round" stroke-linejoin="round"
+          filter="url(#shadow)"/>
+
+    <!-- floor marker: the moment the projection bottoms out -->
+    <circle cx="262" cy="355" r="33" fill="#ffffff"/>
+    <circle cx="262" cy="355" r="18" fill="#ff6b6b"/>
+    <circle cx="255" cy="347" r="6" fill="#ffffff" opacity="0.55"/>
+  </g>
 </svg>

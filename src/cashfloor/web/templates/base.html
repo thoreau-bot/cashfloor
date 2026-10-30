@@ -43,7 +43,7 @@
 </head>
 <body>
 <header>
-  <span class="brand"><svg viewBox="0 0 512 512" aria-hidden="true"><line x1="72" y1="372" x2="440" y2="372" stroke="currentColor" stroke-width="40" stroke-linecap="round" opacity="0.55"/><path d="M72 140 C 128 140, 150 220, 196 300 C 226 354, 248 372, 268 372 C 296 372, 328 284, 364 236 C 392 198, 414 188, 440 188" fill="none" stroke="currentColor" stroke-width="48" stroke-linecap="round" stroke-linejoin="round"/><circle cx="268" cy="372" r="44" fill="currentColor"/></svg>cashfloor</span>
+  <span class="brand"><svg viewBox="0 0 512 512" aria-hidden="true"><rect x="56" y="372" width="400" height="40" rx="20" fill="currentColor" opacity="0.45"/> <path d="M68 148 C 114 148, 146 220, 186 300 C 216 358, 242 384, 268 384 C 300 384, 334 292, 376 230 C 410 180, 432 168, 448 166" fill="none" stroke="currentColor" stroke-width="52" stroke-linecap="round" stroke-linejoin="round"/> <circle cx="268" cy="384" r="46" fill="currentColor"/></svg>cashfloor</span>
   <a href="/" class="{{ 'active' if request.url.path == '/' else '' }}">Dashboard</a>
   <a href="/accounts" class="{{ 'active' if request.url.path.startswith('/accounts') else '' }}">Accounts</a>
   <a href="/items" class="{{ 'active' if request.url.path.startswith('/items') else '' }}">Scheduled</a>
