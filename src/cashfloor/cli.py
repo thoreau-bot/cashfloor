@@ -308,6 +308,18 @@ def statements_reset(
     rprint(f"[green]removed {n} statement records[/green]" + (" and files" if delete_files else ""))
 
 
+@statements_app.command("text")
+def statements_text(path: Path, pages: int = typer.Option(2, help="How many pages to print")) -> None:
+    """Print the text the parser sees for a PDF (to debug missed fields)."""
+    from .statements.organizer import extract_text
+    from .statements.parser import parse_statement_text
+
+    txt = extract_text(path, max_pages=pages)
+    print(txt)
+    ps = parse_statement_text(txt)
+    rprint("\n[bold]parsed:[/bold]", {k: str(v) for k, v in ps.__dict__.items() if v not in (None, [], "")})
+
+
 # -- secrets ----------------------------------------------------------------
 @secret_app.command("set")
 def secret_set(name: str, value: str | None = typer.Argument(None)) -> None:
