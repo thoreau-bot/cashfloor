@@ -76,7 +76,7 @@ def classify_interval(gaps: list[int], days: list[date], min_regular: float = 0.
     return None
 
 
-P2P_RE = re.compile(r"^(zelle|paypal|venmo|cash app|cashapp|apple cash)\b", re.I)
+P2P_RE = re.compile(r"^(zelle|paypal|venmo|cash app|cashapp|apple cash|stripe|square|sq \*|wise|revolut)\b", re.I)
 
 
 def is_p2p(pattern: str) -> bool:
