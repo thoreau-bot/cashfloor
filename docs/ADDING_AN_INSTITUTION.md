@@ -5,6 +5,15 @@ Each portal is one Python file exposing a `Scraper` class. The shared
 isolation, and hands downloaded PDFs to the statement pipeline. Your file
 only knows how to drive that one website.
 
+## 0. Look at a real one first
+
+`providers/institutions/usaa.py` is a working, API-driven plugin and the
+pattern to copy for any portal whose statements come from an XHR call: let
+the page log in and load its list, capture the list JSON and auth headers
+from the page's own traffic with `page.on("request"/"response")`, then fetch
+PDFs directly with `page.request.get(...)`. No DOM clicking, so redesigns
+don't break it. `example_bank.py` shows the DOM-driven fallback.
+
 ## 1. Record the flow
 
 ```bash

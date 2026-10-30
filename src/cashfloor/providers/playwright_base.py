@@ -43,6 +43,9 @@ class InstitutionScraper(ABC):
     def __init__(self, credentials: dict[str, Any], options: dict[str, Any]):
         self.credentials = credentials
         self.options = options
+        #: Anything the plugin wants saved verbatim under data/raw/ (e.g. the
+        #: portal's document-list JSON) so parsers can be refined offline.
+        self.raw: dict[str, Any] = {}
 
     @abstractmethod
     def login(self, page: Page) -> None:
@@ -60,6 +63,12 @@ class InstitutionScraper(ABC):
     def download_statements(self, page: Page, account: Account, since: date, dest: Path) -> list[Path]:
         """Download statement PDFs newer than `since` into `dest`.  Return paths.
         Naming is irrelevant here; the statement pipeline renames."""
+        return []
+
+    def download_all_statements(self, page: Page, since: date, dest: Path) -> list[Path]:
+        """For statement-only plugins (balances come from elsewhere): download
+        every statement newer than `since` regardless of account.  Called after
+        the per-account loop."""
         return []
 
     def is_logged_in(self, page: Page) -> bool:
@@ -128,12 +137,17 @@ class PlaywrightProvider(Provider):
         now = datetime.now(UTC)
 
         with sync_playwright() as p:
-            ctx: BrowserContext = p.chromium.launch_persistent_context(
+            launch_kwargs: dict[str, Any] = dict(
                 user_data_dir=str(self._profile_dir()),
                 headless=self.pc.headless,
                 accept_downloads=True,
                 viewport={"width": 1280, "height": 900},
             )
+            # "chrome" / "msedge" uses the real installed browser, which gets
+            # through bot detection far more often than bundled Chromium.
+            if self.pc.options.get("channel"):
+                launch_kwargs["channel"] = self.pc.options["channel"]
+            ctx: BrowserContext = p.chromium.launch_persistent_context(**launch_kwargs)
             try:
                 page = ctx.new_page()
                 page.goto(scraper.login_url, wait_until="domcontentloaded")
@@ -154,6 +168,12 @@ class PlaywrightProvider(Provider):
                         )
                     except Exception as e:  # noqa: BLE001
                         res.errors.append(f"{acct.name}: statements failed: {e}")
+                try:
+                    res.statement_files.extend(scraper.download_all_statements(page, since, self._downloads_dir()))
+                except Exception as e:  # noqa: BLE001
+                    res.errors.append(f"statements failed: {e}")
             finally:
                 ctx.close()
+        if scraper.raw:
+            res.raw = scraper.raw
         return res

@@ -62,6 +62,20 @@ name = "inbox"
 kind = "filedrop"
 enabled = true
 
+# USAA documents (statements, insurance statements, tax forms).  Statement-only;
+# balances come from SimpleFIN.  First run: a Chrome window opens, you log in
+# (MFA included) once; the profile under data/browser-profiles/usaa keeps it.
+# [[provider]]
+# name = "usaa"
+# kind = "playwright"
+# module = "usaa"
+# enabled = true
+# headless = false              # keep false: USAA bot detection
+# statements_since = "2025-01-01"
+# [provider.options]
+# channel = "chrome"            # use installed Google Chrome, not bundled Chromium
+# include = ["STATEMENT"]       # omit to download every document type
+
 # Example Playwright scraper.  One block per institution; the `module` is a
 # plugin under src/cashfloor/providers/institutions/ (or an installed package
 # exposing the "cashfloor.institutions" entry point).

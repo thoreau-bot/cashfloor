@@ -15,6 +15,7 @@ class SyncResult:
     transactions: list[Transaction] = field(default_factory=list)
     statement_files: list[Path] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+    raw: dict | None = None  # provider's raw payload, saved under data/raw/ when enabled
 
     @property
     def ok(self) -> bool:
