@@ -169,7 +169,7 @@ def project(db: Database, cfg: Config, as_of: date | None = None) -> ProjectionR
 def explain(result: ProjectionResult) -> str:
     lines = [
         f"As of {result.as_of}: pool balance {result.starting_balance/100:,.2f}",
-        f"Lowest projected balance in next {result.horizon_days} days: "
+        f"Cash floor (lowest balance in next {result.horizon_days} days): "
         f"{result.floor/100:,.2f} on {result.floor_date}",
         f"Safety buffer: {result.safety_buffer/100:,.2f}",
         f"Discretionary now: {result.discretionary/100:,.2f}",

@@ -19,9 +19,9 @@
     <div class="small muted">floor − buffer of {{ "{:,.0f}".format(p.safety_buffer) }}</div>
   </div>
   <div class="card">
-    <h3>Lowest balance ({{ p.horizon_days }}d)</h3>
+    <h3>Cash floor</h3>
     <div class="big {{ 'bad' if p.floor < 0 else '' }}">{{ "{:,.2f}".format(p.floor) }}</div>
-    <div class="small muted">on {{ p.floor_date }}</div>
+    <div class="small muted">lowest balance in the next {{ p.horizon_days }} days, on {{ p.floor_date }}</div>
   </div>
   <div class="card">
     <h3>Pool balance today</h3>
