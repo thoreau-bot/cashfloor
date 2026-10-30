@@ -67,6 +67,18 @@
     <td class="small muted">{{ base['projection.estimate_future_card_payments'] }}</td>
   </tr>
   <tr>
+    <td>Use available balance</td>
+    <td><input type="checkbox" name="projection.use_available_balance" value="true" {{ 'checked' if current['projection.use_available_balance'] }}></td>
+    <td class="small muted">{{ help['projection.use_available_balance'] }}</td>
+    <td class="small muted">{{ base['projection.use_available_balance'] }}</td>
+  </tr>
+  <tr>
+    <td>Stale after (days)</td>
+    <td><input name="projection.stale_after_days" value="{{ current['projection.stale_after_days'] }}" size="4"></td>
+    <td class="small muted">{{ help['projection.stale_after_days'] }}</td>
+    <td class="small muted">{{ base['projection.stale_after_days'] }}</td>
+  </tr>
+  <tr>
     <td>Recurring: min occurrences</td>
     <td><input name="recurring.min_occurrences" value="{{ current['recurring.min_occurrences'] }}" size="4"></td>
     <td class="small muted">{{ help['recurring.min_occurrences'] }}</td>
@@ -89,6 +101,12 @@
     <td><input name="scheduler.daily_sync_time" value="{{ current['scheduler.daily_sync_time'] }}" size="6"></td>
     <td class="small muted">{{ help['scheduler.daily_sync_time'] }} (takes effect on restart)</td>
     <td class="small muted">{{ base['scheduler.daily_sync_time'] }}</td>
+  </tr>
+  <tr>
+    <td>Keep raw responses</td>
+    <td><input type="checkbox" name="general.keep_raw_responses" value="true" {{ 'checked' if current['general.keep_raw_responses'] }}></td>
+    <td class="small muted">{{ help['general.keep_raw_responses'] }} — <a href="/data/raw">view latest</a></td>
+    <td class="small muted">{{ base['general.keep_raw_responses'] }}</td>
   </tr>
   <tr>
     <td>Time zone</td>

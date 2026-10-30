@@ -127,8 +127,14 @@ def project(db: Database, cfg: Config, as_of: date | None = None) -> ProjectionR
     accounts = db.list_accounts()
     items = db.list_items()
     pool = pool_accounts(cfg, accounts)
-    starting = sum(a.balance for a in pool)
+    starting = sum((a.spendable if cfg.projection.use_available_balance else a.balance) for a in pool)
     events, unconfirmed = build_events(cfg, accounts, items, as_of, horizon_end)
+    warnings: list[str] = []
+    for a in pool:
+        if a.sync_error:
+            warnings.append(f"{a.display_name}: {a.sync_error}")
+        elif a.balance_as_of and (as_of - a.balance_as_of.date()).days > cfg.projection.stale_after_days:
+            warnings.append(f"{a.display_name}: balance is {(as_of - a.balance_as_of.date()).days} days old")
 
     days: list[ProjectionDay] = []
     bal = starting
@@ -156,6 +162,7 @@ def project(db: Database, cfg: Config, as_of: date | None = None) -> ProjectionR
         safety_buffer=buffer,
         discretionary=floor - buffer,
         unconfirmed_count=unconfirmed,
+        warnings=warnings,
     )
 
 
@@ -169,4 +176,6 @@ def explain(result: ProjectionResult) -> str:
     ]
     if result.unconfirmed_count:
         lines.append(f"({result.unconfirmed_count} detected recurring items await confirmation and are NOT included)")
+    for w in result.warnings:
+        lines.append(f"WARNING: {w}")
     return "\n".join(lines)

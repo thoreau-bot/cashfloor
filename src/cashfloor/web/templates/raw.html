@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block body %}
+<h2>Raw provider responses</h2>
+<p class="muted small">Exactly what the provider returned, before cashfloor interpreted it. Use this to see which fields your institutions actually populate (look for <code>extra</code>, <code>available-balance</code>, <code>holdings</code>, <code>errlist</code>). Files live in <code>data/raw/</code>; the last 30 are kept.</p>
+{% if files %}
+<div class="card">
+  <form method="get" action="/data/raw" class="inline">
+  {% for f in files %}<a href="/data/raw/{{ f }}" class="{{ 'good' if f == chosen }}">{{ f }}</a>{% if not loop.last %} · {% endif %}{% endfor %}
+  </form>
+</div>
+<div class="card"><pre style="white-space:pre-wrap;font-size:12px;margin:0">{{ body }}</pre></div>
+{% else %}
+<div class="card muted">Nothing captured yet — run a sync with "Keep raw responses" on.</div>
+{% endif %}
+{% endblock %}

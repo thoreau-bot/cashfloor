@@ -6,6 +6,12 @@
   {% for text, href in setup_hints %}<div>→ <a href="{{ href }}">{{ text }}</a></div>{% endfor %}
 </div>
 {% endif %}
+{% if p.warnings %}
+<div class="card" style="margin-bottom:14px;border-color:var(--warn)">
+  <h3 class="warn">Floor may be unreliable</h3>
+  {% for w in p.warnings %}<div>{{ w }}</div>{% endfor %}
+</div>
+{% endif %}
 <div class="grid">
   <div class="card">
     <h3>Discretionary now</h3>
@@ -50,18 +56,38 @@
 <h2>Accounts</h2>
 <div class="card">
 <table>
-  <tr><th>Institution</th><th>Account</th><th>Type</th><th>Pool</th><th class="num">Balance</th><th>Due</th><th class="num">Stmt</th><th>Synced</th></tr>
+  <tr><th>Institution</th><th>Account</th><th>Type</th><th>Pool</th><th class="num">Balance</th><th class="num">Available</th><th>Due</th><th class="num">Stmt</th><th>Synced</th></tr>
   {% for a in accounts %}
   <tr>
-    <td>{{ a.institution }}</td><td>{{ a.display_name }}</td><td>{{ a.type.value }}</td><td>{{ '✓' if a.in_pool }}</td>
-    <td class="num">{{ a.balance | money }}</td><td>{{ a.due_date or '' }}</td><td class="num">{{ a.statement_balance | money }}</td>
+    <td>{{ a.institution }}</td>
+    <td>{{ a.display_name }}{% if a.sync_error %}<br><span class="small bad">{{ a.sync_error }}</span>{% endif %}</td>
+    <td>{{ a.type.value }}</td><td>{{ '✓' if a.in_pool }}</td>
+    <td class="num">{{ a.balance | money }}</td><td class="num muted">{{ a.available | money }}</td><td>{{ a.due_date or '' }}</td><td class="num">{{ a.statement_balance | money }}</td>
     <td class="small muted">{{ a.last_synced.strftime('%m-%d %H:%M') if a.last_synced else '' }}</td>
   </tr>
   {% else %}
-  <tr><td colspan="8" class="muted">No accounts yet — connect SimpleFIN under <a href="/settings">Settings</a>, then press <strong>Sync now</strong>.</td></tr>
+  <tr><td colspan="9" class="muted">No accounts yet — connect SimpleFIN under <a href="/settings">Settings</a>, then press <strong>Sync now</strong>.</td></tr>
   {% endfor %}
 </table>
 </div>
+
+{% if connections %}
+<h2>Connections</h2>
+<div class="card">
+<table>
+  <tr><th>Institution</th><th>Status</th><th>Last seen</th><th class="small">conn id</th></tr>
+  {% for c in connections %}
+  <tr>
+    <td>{{ c.name }}{% if c.org_url %} <span class="small muted">{{ c.org_url }}</span>{% endif %}</td>
+    <td>{% if c.error_code %}<span class="bad">● {{ c.error_code }}</span> <span class="small">{{ c.error_msg }}</span>{% else %}<span class="good">● ok</span>{% endif %}</td>
+    <td class="small muted">{{ c.last_seen.strftime('%m-%d %H:%M') if c.last_seen else '' }}</td>
+    <td class="small muted">{{ c.conn_id }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% if holdings_total %}<p class="small muted">Investment holdings (not in pool): {{ holdings_total | money }} — <a href="/holdings">details</a></p>{% endif %}
+</div>
+{% endif %}
 
 <h2>Recent syncs</h2>
 <div class="card small">

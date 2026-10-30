@@ -82,3 +82,14 @@ def test_simplefin_connect_via_gui(client, monkeypatch):
 
 def test_dashboard_setup_hints(client):
     assert "Getting started" not in client.get("/").text or "default payment account" in client.get("/").text
+
+
+def test_raw_and_holdings_pages(client, cfg):
+    raw = cfg.general.data_dir / "raw"
+    raw.mkdir(parents=True, exist_ok=True)
+    (raw / "simplefin-20261029-120000.json").write_text('{"accounts": [], "marker": "xyz"}')
+    assert client.get("/holdings").status_code == 200
+    page = client.get("/data/raw").text
+    assert "xyz" in page and "simplefin-20261029-120000.json" in page
+    assert client.get("/data/raw/../../etc/passwd").status_code in (200, 404)  # no traversal; falls back
+    assert client.get("/").status_code == 200

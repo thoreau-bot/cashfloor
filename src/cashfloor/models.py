@@ -73,10 +73,49 @@ class Account:
     balance_as_of: datetime | None = None
     last_synced: datetime | None = None
     active: bool = True
+    conn_id: str | None = None  # provider connection (SimpleFIN v2)
+    extra: dict | None = None  # server-defined extra data, kept verbatim
+    sync_error: str | None = None  # last provider error touching this account
 
     @property
     def display_name(self) -> str:
         return self.nickname or self.name
+
+    @property
+    def spendable(self) -> int:
+        """Available balance when the provider reports one, else balance."""
+        return self.available if self.available is not None else self.balance
+
+
+@dataclass
+class Connection:
+    """A login at an institution, as seen by the provider.  One connection
+    can carry several accounts.  This is what needs re-auth when it breaks."""
+
+    provider: str
+    conn_id: str
+    name: str
+    org_id: str | None = None
+    org_url: str | None = None
+    sfin_url: str | None = None
+    error_code: str | None = None
+    error_msg: str | None = None
+    last_seen: datetime | None = None
+
+
+@dataclass
+class Holding:
+    account_id: int
+    external_id: str
+    symbol: str | None
+    description: str
+    shares: int | None  # thousandths of a share (shares * 1000) to keep integer math
+    cost_basis: int | None  # cents
+    purchase_price: int | None  # cents
+    market_value: int | None  # cents
+    currency: str = "USD"
+    created: datetime | None = None
+    as_of: datetime | None = None
 
 
 @dataclass
@@ -91,6 +130,7 @@ class Transaction:
     pending: bool = False
     category: str | None = None
     transacted_at: datetime | None = None
+    extra: dict | None = None
 
 
 @dataclass
@@ -156,6 +196,7 @@ class ProjectionResult:
     safety_buffer: int
     discretionary: int
     unconfirmed_count: int
+    warnings: list[str] = field(default_factory=list)  # stale / erroring pool accounts
 
     def to_dict(self) -> dict:
         return {
@@ -167,6 +208,7 @@ class ProjectionResult:
             "safety_buffer": from_cents(self.safety_buffer),
             "discretionary": from_cents(self.discretionary),
             "unconfirmed_count": self.unconfirmed_count,
+            "warnings": self.warnings,
             "days": [
                 {
                     "day": d.day.isoformat(),

@@ -99,6 +99,8 @@ def create_app(cfg: Config, with_scheduler: bool = False) -> FastAPI:
             accounts = d.list_accounts()
             pending = [i for i in d.list_items() if not i.confirmed]
             syncs = d.last_syncs(8)
+            connections = d.list_connections()
+            holdings_total = sum(h.market_value or 0 for h in d.list_holdings())
         finally:
             d.close()
         data = r.to_dict()
@@ -114,6 +116,7 @@ def create_app(cfg: Config, with_scheduler: bool = False) -> FastAPI:
         return templates.TemplateResponse(request, "dashboard.html", {
             "p": data, "chart": svg_chart(data["days"], data["safety_buffer"]), "accounts": accounts,
             "pending": pending, "upcoming": upcoming, "syncs": syncs, "cfg": c, "setup_hints": setup_hints,
+            "connections": connections, "holdings_total": holdings_total,
         })
 
     @app.post("/sync")
@@ -147,6 +150,9 @@ def create_app(cfg: Config, with_scheduler: bool = False) -> FastAPI:
             "scheduler.daily_sync_time": cfg.scheduler.daily_sync_time,
             "general.timezone": cfg.general.timezone,
             "simplefin.lookback_days": next((pc.lookback_days for pc in cfg.provider if pc.kind == "simplefin"), 60),
+            "projection.use_available_balance": cfg.projection.use_available_balance,
+            "projection.stale_after_days": cfg.projection.stale_after_days,
+            "general.keep_raw_responses": cfg.general.keep_raw_responses,
         }
         current = {
             "projection.horizon_days": c.projection.horizon_days,
@@ -159,8 +165,14 @@ def create_app(cfg: Config, with_scheduler: bool = False) -> FastAPI:
             "scheduler.daily_sync_time": c.scheduler.daily_sync_time,
             "general.timezone": c.general.timezone,
             "simplefin.lookback_days": next((pc.lookback_days for pc in c.provider if pc.kind == "simplefin"), 60),
+            "projection.use_available_balance": c.projection.use_available_balance,
+            "projection.stale_after_days": c.projection.stale_after_days,
+            "general.keep_raw_responses": c.general.keep_raw_responses,
         }
+        raw_dir = cfg.general.data_dir / "raw"
+        raw_files = sorted(raw_dir.glob("*.json"), reverse=True)[:10] if raw_dir.exists() else []
         return templates.TemplateResponse(request, "settings.html", {
+            "raw_files": [f.name for f in raw_files], "raw_dir": str(raw_dir),
             "help": GUI_SETTINGS, "base": base, "current": current, "stored": stored, "account_keys": keys,
             "simplefin": simplefin_connected(), "config_path": str(cfg.config_path or "(no config.toml — using defaults)"),
             "msg": msg, "err": err,
@@ -171,8 +183,10 @@ def create_app(cfg: Config, with_scheduler: bool = False) -> FastAPI:
         form = await request.form()
         d = db()
         try:
+            checkboxes = {"projection.estimate_future_card_payments", "projection.use_available_balance",
+                          "general.keep_raw_responses"}
             for key in GUI_SETTINGS:
-                if key == "projection.estimate_future_card_payments":
+                if key in checkboxes:
                     val = "true" if form.get(key) else "false"
                 else:
                     val = str(form.get(key, "")).strip()
@@ -294,6 +308,33 @@ def create_app(cfg: Config, with_scheduler: bool = False) -> FastAPI:
             d.close()
         return templates.TemplateResponse(request, "statements.html", {"statements": rows, "accts": accts})
 
+    # ---- raw provider data (what came back, verbatim) ----
+    @app.get("/data/raw", response_class=HTMLResponse)
+    @app.get("/data/raw/{name}", response_class=HTMLResponse)
+    def raw_view(request: Request, name: str = ""):
+        raw_dir = cfg.general.data_dir / "raw"
+        files = sorted(raw_dir.glob("*.json"), reverse=True) if raw_dir.exists() else []
+        chosen = None
+        if name:
+            cand = raw_dir / Path(name).name  # no traversal
+            chosen = cand if cand in files else None
+        elif files:
+            chosen = files[0]
+        body = chosen.read_text() if chosen else ""
+        return templates.TemplateResponse(request, "raw.html", {
+            "files": [f.name for f in files[:30]], "chosen": chosen.name if chosen else "", "body": body,
+        })
+
+    @app.get("/holdings", response_class=HTMLResponse)
+    def holdings(request: Request):
+        d = db()
+        try:
+            rows = d.list_holdings()
+            accts = {a.id: a for a in d.list_accounts(active_only=False)}
+        finally:
+            d.close()
+        return templates.TemplateResponse(request, "holdings.html", {"holdings": rows, "accts": accts})
+
     # ---- JSON API ----
     @app.get("/api/projection")
     def api_projection():
@@ -312,6 +353,6 @@ def create_app(cfg: Config, with_scheduler: bool = False) -> FastAPI:
             d.close()
         return {"discretionary": from_cents(r.discretionary), "floor": from_cents(r.floor),
                 "floor_date": r.floor_date.isoformat(), "as_of": r.as_of.isoformat(),
-                "unconfirmed_count": r.unconfirmed_count}
+                "unconfirmed_count": r.unconfirmed_count, "warnings": r.warnings}
 
     return app

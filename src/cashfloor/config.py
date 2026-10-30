@@ -20,6 +20,8 @@ class GeneralConfig(BaseModel):
     inbox_dir: Path = Path("./inbox")
     currency: str = "USD"
     timezone: str = "UTC"
+    # Save each provider's raw JSON response under data/raw/ (last 30 kept).
+    keep_raw_responses: bool = True
 
 
 class ProjectionConfig(BaseModel):
@@ -30,6 +32,11 @@ class ProjectionConfig(BaseModel):
     card_payment_mode: str = "statement"  # "statement" | "minimum"
     # Repeat the latest card/loan/utility payment monthly through the horizon.
     estimate_future_card_payments: bool = True
+    # Start the projection from the provider's *available* balance (net of
+    # holds/pending) when it reports one, instead of the ledger balance.
+    use_available_balance: bool = True
+    # Flag the floor as unreliable when a pool account's balance is older than this.
+    stale_after_days: int = 3
 
 
 class RecurringConfig(BaseModel):
@@ -126,6 +133,9 @@ GUI_SETTINGS: dict[str, str] = {
     "projection.default_payment_account": "Key of the account that pays cards/loans/utilities",
     "projection.card_payment_mode": "Pay 'statement' balance or 'minimum' on due dates",
     "projection.estimate_future_card_payments": "Repeat the last card payment monthly through the horizon",
+    "projection.use_available_balance": "Start from the available balance (net of holds) when the bank reports one",
+    "projection.stale_after_days": "Warn when a pool account's balance is older than this many days",
+    "general.keep_raw_responses": "Keep raw provider JSON under data/raw/ for inspection",
     "recurring.min_occurrences": "Hits before a recurring pattern is proposed",
     "recurring.amount_tolerance": "Allowed amount variance (fraction) within a series",
     "scheduler.daily_sync_time": "Local time (HH:MM) for the daily sync",

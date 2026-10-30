@@ -4,6 +4,7 @@ readable and the database is easy to inspect with any SQLite tool.
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -13,14 +14,16 @@ from pathlib import Path
 from .models import (
     Account,
     AccountType,
+    Connection,
     Frequency,
+    Holding,
     ItemSource,
     ScheduledItem,
     Statement,
     Transaction,
 )
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -112,6 +115,34 @@ CREATE TABLE IF NOT EXISTS statements (
     imported_at     TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS connections (
+    provider   TEXT NOT NULL,
+    conn_id    TEXT NOT NULL,
+    name       TEXT NOT NULL,
+    org_id     TEXT,
+    org_url    TEXT,
+    sfin_url   TEXT,
+    error_code TEXT,
+    error_msg  TEXT,
+    last_seen  TEXT,
+    PRIMARY KEY (provider, conn_id)
+);
+
+CREATE TABLE IF NOT EXISTS holdings (
+    account_id     INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    external_id    TEXT NOT NULL,
+    symbol         TEXT,
+    description    TEXT NOT NULL DEFAULT '',
+    shares         INTEGER,
+    cost_basis     INTEGER,
+    purchase_price INTEGER,
+    market_value   INTEGER,
+    currency       TEXT NOT NULL DEFAULT 'USD',
+    created        TEXT,
+    as_of          TEXT,
+    PRIMARY KEY (account_id, external_id)
+);
+
 CREATE TABLE IF NOT EXISTS sync_log (
     id          INTEGER PRIMARY KEY,
     provider    TEXT NOT NULL,
@@ -150,10 +181,21 @@ class Database:
         self.migrate()
 
     # -- lifecycle ---------------------------------------------------------
+    # Columns added after v1; applied to existing databases on open.
+    _ADDED_COLUMNS = {
+        "accounts": [("conn_id", "TEXT"), ("extra", "TEXT"), ("sync_error", "TEXT")],
+        "transactions": [("extra", "TEXT")],
+    }
+
     def migrate(self) -> None:
         self.conn.executescript(SCHEMA)
+        for table, cols in self._ADDED_COLUMNS.items():
+            have = {r["name"] for r in self.conn.execute(f"PRAGMA table_info({table})")}
+            for name, decl in cols:
+                if name not in have:
+                    self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {decl}")
         self.conn.execute(
-            "INSERT OR IGNORE INTO meta(key, value) VALUES ('schema_version', ?)",
+            "INSERT OR REPLACE INTO meta(key, value) VALUES ('schema_version', ?)",
             (str(SCHEMA_VERSION),),
         )
         self.conn.commit()
@@ -208,6 +250,9 @@ class Database:
             balance_as_of=_pdt(r["balance_as_of"]),
             last_synced=_pdt(r["last_synced"]),
             active=bool(r["active"]),
+            conn_id=r["conn_id"],
+            extra=json.loads(r["extra"]) if r["extra"] else None,
+            sync_error=r["sync_error"],
         )
 
     def upsert_account(self, a: Account) -> Account:
@@ -223,13 +268,14 @@ class Database:
                     """INSERT INTO accounts(provider, external_id, name, institution, type, key,
                        nickname, currency, last4, balance, available, credit_limit,
                        statement_balance, minimum_payment, due_date, in_pool,
-                       balance_as_of, last_synced, active)
-                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                       balance_as_of, last_synced, active, conn_id, extra, sync_error)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                     (
                         a.provider, a.external_id, a.name, a.institution, a.type.value, a.key,
                         a.nickname, a.currency, a.last4, a.balance, a.available, a.credit_limit,
                         a.statement_balance, a.minimum_payment, _d(a.due_date), int(a.in_pool),
                         _dt(a.balance_as_of), _dt(a.last_synced), int(a.active),
+                        a.conn_id, json.dumps(a.extra) if a.extra else None, a.sync_error,
                     ),
                 )
                 a.id = cur.lastrowid
@@ -242,12 +288,14 @@ class Database:
                        statement_balance=COALESCE(?, statement_balance),
                        minimum_payment=COALESCE(?, minimum_payment),
                        due_date=COALESCE(?, due_date),
-                       balance_as_of=?, last_synced=?, active=1
+                       balance_as_of=?, last_synced=?, active=1,
+                       conn_id=COALESCE(?, conn_id), extra=?, sync_error=?
                        WHERE id=?""",
                     (
                         a.name, a.institution, a.currency, a.last4, a.balance, a.available,
                         a.credit_limit, a.statement_balance, a.minimum_payment, _d(a.due_date),
-                        _dt(a.balance_as_of), _dt(a.last_synced), a.id,
+                        _dt(a.balance_as_of), _dt(a.last_synced),
+                        a.conn_id, json.dumps(a.extra) if a.extra else None, a.sync_error, a.id,
                     ),
                 )
             if a.balance_as_of:
@@ -328,14 +376,15 @@ class Database:
             for t in txs:
                 cur = c.execute(
                     """INSERT INTO transactions(account_id, external_id, posted, amount, payee,
-                       memo, pending, category, transacted_at)
-                       VALUES (?,?,?,?,?,?,?,?,?)
+                       memo, pending, category, transacted_at, extra)
+                       VALUES (?,?,?,?,?,?,?,?,?,?)
                        ON CONFLICT(account_id, external_id) DO UPDATE SET
                          posted=excluded.posted, amount=excluded.amount, payee=excluded.payee,
-                         memo=excluded.memo, pending=excluded.pending""",
+                         memo=excluded.memo, pending=excluded.pending, extra=excluded.extra""",
                     (
                         t.account_id, t.external_id, t.posted.isoformat(), t.amount, t.payee,
                         t.memo, int(t.pending), t.category, _dt(t.transacted_at),
+                        json.dumps(t.extra) if t.extra else None,
                     ),
                 )
                 n += cur.rowcount
@@ -359,8 +408,55 @@ class Database:
                 posted=date.fromisoformat(r["posted"]), amount=r["amount"], payee=r["payee"],
                 memo=r["memo"], pending=bool(r["pending"]), category=r["category"],
                 transacted_at=_pdt(r["transacted_at"]),
+                extra=json.loads(r["extra"]) if r["extra"] else None,
             )
             for r in self.conn.execute(q, vals)
+        ]
+
+    # -- connections -------------------------------------------------------
+    def upsert_connection(self, c: Connection) -> None:
+        with self.tx() as x:
+            x.execute(
+                """INSERT INTO connections(provider, conn_id, name, org_id, org_url, sfin_url,
+                   error_code, error_msg, last_seen) VALUES (?,?,?,?,?,?,?,?,?)
+                   ON CONFLICT(provider, conn_id) DO UPDATE SET name=excluded.name,
+                     org_id=COALESCE(excluded.org_id, org_id), org_url=COALESCE(excluded.org_url, org_url),
+                     sfin_url=COALESCE(excluded.sfin_url, sfin_url), error_code=excluded.error_code,
+                     error_msg=excluded.error_msg, last_seen=excluded.last_seen""",
+                (c.provider, c.conn_id, c.name, c.org_id, c.org_url, c.sfin_url,
+                 c.error_code, c.error_msg, _dt(c.last_seen)),
+            )
+
+    def list_connections(self) -> list[Connection]:
+        return [
+            Connection(provider=r["provider"], conn_id=r["conn_id"], name=r["name"], org_id=r["org_id"],
+                       org_url=r["org_url"], sfin_url=r["sfin_url"], error_code=r["error_code"],
+                       error_msg=r["error_msg"], last_seen=_pdt(r["last_seen"]))
+            for r in self.conn.execute("SELECT * FROM connections ORDER BY name")
+        ]
+
+    # -- holdings ----------------------------------------------------------
+    def replace_holdings(self, account_id: int, holdings: list[Holding]) -> None:
+        with self.tx() as c:
+            c.execute("DELETE FROM holdings WHERE account_id=?", (account_id,))
+            for h in holdings:
+                c.execute(
+                    """INSERT INTO holdings(account_id, external_id, symbol, description, shares,
+                       cost_basis, purchase_price, market_value, currency, created, as_of)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                    (account_id, h.external_id, h.symbol, h.description, h.shares, h.cost_basis,
+                     h.purchase_price, h.market_value, h.currency, _dt(h.created), _dt(h.as_of)),
+                )
+
+    def list_holdings(self, account_id: int | None = None) -> list[Holding]:
+        q = "SELECT * FROM holdings" + (" WHERE account_id=?" if account_id is not None else "")
+        rows = self.conn.execute(q, (account_id,) if account_id is not None else ())
+        return [
+            Holding(account_id=r["account_id"], external_id=r["external_id"], symbol=r["symbol"],
+                    description=r["description"], shares=r["shares"], cost_basis=r["cost_basis"],
+                    purchase_price=r["purchase_price"], market_value=r["market_value"],
+                    currency=r["currency"], created=_pdt(r["created"]), as_of=_pdt(r["as_of"]))
+            for r in rows
         ]
 
     # -- scheduled items ---------------------------------------------------

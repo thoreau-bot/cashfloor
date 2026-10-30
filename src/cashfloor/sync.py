@@ -8,9 +8,11 @@ Failures are isolated per provider.
 
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
+from pathlib import Path
 
 from .config import Config
 from .db import Database
@@ -32,6 +34,21 @@ class SyncSummary:
     statements: int = 0
     statements_review: int = 0
     new_proposals: int = 0
+    connection_errors: dict[str, str] = field(default_factory=dict)
+
+
+def save_raw_response(cfg: Config, provider: str, payload: dict, keep: int = 30) -> Path | None:
+    """Keep the last `keep` raw provider responses under data/raw/ so you can
+    see exactly what the provider sends (and what cashfloor ignores)."""
+    if not cfg.general.keep_raw_responses:
+        return None
+    d = cfg.general.data_dir / "raw"
+    d.mkdir(parents=True, exist_ok=True)
+    path = d / f"{provider}-{datetime.now().strftime('%Y%m%d-%H%M%S')}.json"
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True))
+    for old in sorted(d.glob(f"{provider}-*.json"))[:-keep]:
+        old.unlink(missing_ok=True)
+    return path
 
 
 def apply_account_overrides(cfg: Config, db: Database) -> None:
@@ -59,11 +76,24 @@ def run_sync(cfg: Config, db: Database, only: str | None = None, today: date | N
         try:
             prov = build_provider(cfg, pc)
             res = prov.fetch()
+            raw = getattr(res, "raw", None)
+            if raw is not None:
+                info = getattr(res, "server_info", None)
+                save_raw_response(cfg, pc.name, {"_server_info": info, **raw} if info else raw)
+            for conn in getattr(res, "connections", []) or []:
+                db.upsert_connection(conn)
+                if conn.error_code:
+                    summary.connection_errors[conn.name] = f"{conn.error_code}: {conn.error_msg}"
             ext_to_id: dict[str, int] = {}
             for acct in res.accounts:
                 saved = db.upsert_account(acct)
                 ext_to_id[acct.external_id] = saved.id  # type: ignore[assignment]
                 summary.accounts += 1
+            for ext, holdings in (getattr(res, "holdings", None) or {}).items():
+                if ext in ext_to_id:
+                    for h in holdings:
+                        h.account_id = ext_to_id[ext]
+                    db.replace_holdings(ext_to_id[ext], holdings)
             txs = []
             for t in res.transactions:
                 ext = t.__dict__.get("_account_external_id")

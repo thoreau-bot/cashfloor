@@ -22,7 +22,7 @@ server-rendered dashboard bound to `127.0.0.1`. No cloud, no telemetry, MIT.
 
 | Source | What it gives | Notes |
 |---|---|---|
-| **SimpleFIN Bridge** | balances + transactions for most US/CA banks & cards | Read-only aggregator, ~$15/yr, you hold the credentials. Recommended daily feed. |
+| **SimpleFIN Bridge** | balances (ledger + available), transactions, connection health, investment holdings | Read-only aggregator, ~$15/yr, you hold the credentials. Protocol v2; every field the Bridge returns is stored, and raw responses are kept under `data/raw/` (viewable in the GUI) so you can see what your institutions actually send. |
 | **Playwright scrapers** | balances, due dates, **statement PDFs**, utilities | One small plugin file per institution. Persistent browser profile so MFA is a one-time event. |
 | **Inbox folder** | PDF / OFX / QFX / CSV you drop in by hand | Universal fallback. Any portal you can't automate still gets archived and projected. |
 
@@ -93,6 +93,11 @@ card/loan/utility due dates (from statements or manual)     ──► payment ev
   (≥3 hits, stable interval, amounts within tolerance). Proposals are
   *unconfirmed* and excluded from the projection until you confirm them —
   the dashboard shows how many are waiting.
+* **Starting balance** is the *available* balance when the bank reports one
+  (net of holds and pending debits), else the ledger balance. Toggle in Settings.
+* **Reliability warnings**: if a pool account's connection needs re-auth at the
+  Bridge, or its balance is older than `stale_after_days`, the dashboard flags
+  the floor as unreliable rather than quietly using stale numbers.
 * **Card payments** default to the statement balance on the due date and
   repeat monthly at the same amount through the horizon (`(est.)`), so the
   floor isn't falsely rosy after the first known due date. Switch to
