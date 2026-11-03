@@ -58,6 +58,7 @@ ignore = ["B008"]  # typer.Option/Argument in defaults is the typer idiom
 "src/cashfloor/web/app.py" = ["E501"]       # FastAPI Form() signatures
 "src/cashfloor/cli.py" = ["E501"]
 "tests/*" = ["E501"]
+"scripts/*" = ["E501"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
