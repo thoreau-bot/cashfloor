@@ -1,14 +1,14 @@
 # --- secrets & personal financial data: NEVER commit ---
 .env
-config.toml
-data/
-statements/
-inbox/
+/config.toml
+/data/
+/statements/
+/inbox/
 *.sqlite
 *.sqlite-journal
 *.sqlite-wal
 *.sqlite-shm
-browser-profiles/
+/browser-profiles/
 *.pdf
 *.ofx
 *.qfx
