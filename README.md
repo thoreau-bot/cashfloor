@@ -145,6 +145,8 @@ docs at `/api/docs`.
 
 ## Security posture
 
+Full data-handling notes: `docs/PRIVACY.md`.
+
 * Secrets only in the OS keyring (`keyring` library). Never in config, DB or logs.
 * `config.toml`, `data/`, `statements/`, `inbox/`, browser profiles and every
   PDF/OFX/CSV are git-ignored by default.
