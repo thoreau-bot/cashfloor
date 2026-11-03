@@ -72,6 +72,15 @@ compiler is needed on any platform.
 To run it headless on a box that's always on, use a systemd unit / Task
 Scheduler entry that launches `cashfloor serve`.
 
+## Updating
+
+Download the latest release zip from GitHub, unpack it over your
+install folder (your `config.toml`, `data/`, `statements/` and `.venv` are
+never in the zip, so they survive), then run `scripts\setup.bat` /
+`scripts/setup.sh` once to pick up any new dependencies and migrate the
+database. Restart `serve` afterwards. The changelog says if a version
+needs anything else.
+
 ## The model
 
 ```

@@ -4,10 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>cashfloor</title>
-<link rel="icon" href="/static/icon.svg" type="image/svg+xml">
-<link rel="alternate icon" href="/favicon.ico" sizes="16x16 32x32 48x48">
-<link rel="apple-touch-icon" href="/static/icon-180.png">
-<link rel="manifest" href="/static/manifest.webmanifest">
+<link rel="icon" href="/static/icon.svg?v={{ asset_v }}" type="image/svg+xml">
+<link rel="alternate icon" href="/favicon.ico?v={{ asset_v }}" sizes="16x16 32x32 48x48">
+<link rel="apple-touch-icon" href="/static/icon-180.png?v={{ asset_v }}">
+<link rel="manifest" href="/static/manifest.webmanifest?v={{ asset_v }}">
 <meta name="theme-color" content="#2f6df6">
 <style>
   :root { --bg:#0f1115; --panel:#171a21; --line:#2a2f3a; --fg:#e6e8ee; --dim:#8b93a7; --good:#3ddc97; --bad:#ff6b6b; --warn:#ffc857; --accent:#6ea8fe; }
@@ -50,7 +50,7 @@
   <a href="/statements" class="{{ 'active' if request.url.path.startswith('/statements') else '' }}">Statements</a>
   <a href="/settings" class="{{ 'active' if request.url.path.startswith('/settings') else '' }}">Settings</a>
   <span style="flex:1"></span>
-  <form method="post" action="/sync" class="inline"><button>Sync now</button></form>
+  <form method="post" action="/sync" class="inline"><button>Sync Now</button></form>
 </header>
 <main>{% block body %}{% endblock %}</main>
 </body>

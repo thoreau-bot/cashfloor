@@ -1,0 +1,68 @@
+name: Release
+
+# Tags and releases the version named by the newest "## x.y.z" heading in
+# CHANGELOG.md whenever main is pushed, if that tag doesn't exist yet.
+# The version-bump commit should be the last commit on the branch.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read version from CHANGELOG.md
+        id: ver
+        run: |
+          v=$(grep -m1 -oE '^## [0-9]+\.[0-9]+\.[0-9]+' CHANGELOG.md | sed 's/## //')
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          if git rev-parse "v$v" >/dev/null 2>&1; then echo "exists=true" >> "$GITHUB_OUTPUT"; else echo "exists=false" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Check pyproject version matches
+        if: steps.ver.outputs.exists == 'false'
+        run: |
+          pv=$(grep -m1 -oE '^version = "[^"]+"' pyproject.toml | cut -d'"' -f2)
+          test "$pv" = "${{ steps.ver.outputs.version }}" || { echo "pyproject $pv != changelog ${{ steps.ver.outputs.version }}"; exit 1; }
+
+      - uses: actions/setup-python@v5
+        if: steps.ver.outputs.exists == 'false'
+        with:
+          python-version: "3.12"
+
+      - name: Test
+        if: steps.ver.outputs.exists == 'false'
+        run: |
+          pip install -e ".[dev]"
+          pytest -q
+
+      - name: Build distributable zip
+        if: steps.ver.outputs.exists == 'false'
+        run: |
+          v=${{ steps.ver.outputs.version }}
+          mkdir -p dist
+          git archive --format=zip --prefix="cashfloor/" -o "dist/cashfloor-$v.zip" HEAD
+
+      - name: Release notes from changelog
+        if: steps.ver.outputs.exists == 'false'
+        run: |
+          awk '/^## /{n++} n==1' CHANGELOG.md | tail -n +2 > dist/notes.md
+
+      - name: Tag and release
+        if: steps.ver.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v=${{ steps.ver.outputs.version }}
+          git config user.name "thoreau-bot"
+          git config user.email "123335310+thoreau-bot@users.noreply.github.com"
+          git tag -a "v$v" -m "cashfloor $v"
+          git push origin "v$v"
+          gh release create "v$v" "dist/cashfloor-$v.zip" --title "cashfloor $v" --notes-file dist/notes.md

@@ -2,7 +2,7 @@
 {% block body %}
 {% if msg %}<div class="card good">{{ msg }} — see <a href="/items">Scheduled</a> for new proposals.</div>{% endif %}
 <h2>Statement archive</h2>
-<p class="muted small">Bank statements carry years of transactions. <form method="post" action="/statements/backfill" class="inline"><button class="secondary">Extract transaction history from archived statements</button></form> feeds them to the recurring-bill detector (only dates older than your live feed are used, so nothing double-counts).</p>
+<p class="muted small">Bank statements carry years of transactions. <form method="post" action="/statements/backfill" class="inline"><button class="secondary">Extract Transaction History</button></form> feeds them to the recurring-bill detector (only dates older than your live feed are used, so nothing double-counts).</p>
 <div class="card">
 <table>
   <tr><th>Date</th><th>Institution</th><th>Account</th><th>Document</th><th>Period</th><th>Due</th><th class="num">Amount due</th><th class="num">Closing</th><th>File</th><th></th></tr>

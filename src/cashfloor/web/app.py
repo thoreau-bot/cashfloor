@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from .. import secrets
+from .. import __version__, secrets
 from ..config import GUI_SETTINGS, Config, apply_overrides
 from ..db import Database
 from ..models import AccountType, Frequency, ItemSource, ScheduledItem, from_cents, to_cents
@@ -66,6 +66,7 @@ def create_app(cfg: Config, with_scheduler: bool = False) -> FastAPI:
     app = FastAPI(title="cashfloor", docs_url="/api/docs")
     templates = Jinja2Templates(directory=str(TEMPLATES))
     templates.env.filters["money"] = lambda c: f"{from_cents(c):,.2f}" if c is not None else ""
+    templates.env.globals["asset_v"] = __version__  # static URLs carry ?v=<version> so updates are live on reload
 
     app.mount("/static", StaticFiles(directory=str(STATIC)), name="static")
 
@@ -228,7 +229,7 @@ def create_app(cfg: Config, with_scheduler: bool = False) -> FastAPI:
             secrets.set_secret(simplefin_secret_name(), url)
         except Exception as e:  # noqa: BLE001
             return RedirectResponse(f"/settings?err=SimpleFIN:+{str(e)[:160]}", status_code=303)
-        return RedirectResponse("/settings?msg=SimpleFIN+connected.+Press+Sync+now.", status_code=303)
+        return RedirectResponse("/settings?msg=SimpleFIN+connected.+Press+Sync+Now.", status_code=303)
 
     @app.post("/settings/simplefin/disconnect")
     def settings_simplefin_disconnect():
