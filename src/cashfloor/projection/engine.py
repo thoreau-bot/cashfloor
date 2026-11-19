@@ -222,14 +222,15 @@ def build_events(
                 owed = -a.balance if a.balance < 0 else 0
                 if owed <= 0:
                     continue
-                day = a.pay_day or cfg.projection.default_card_pay_day
+                day = a.effective_pay_day or cfg.projection.default_card_pay_day
                 d = as_of.replace(day=min(day, 28))
                 if d < as_of:
                     d = d + relativedelta(months=1)
                 guard = 0
                 while d <= horizon_end and guard < 24:
                     guard += 1
-                    _event(events, d, -owed, f"{a.display_name} payment (assumed payoff)", "account", a.id)
+                    how = "usual day" if a.pay_day else "day seen in history" if a.pay_day_auto else "default day"
+                    _event(events, d, -owed, f"{a.display_name} payment (assumed payoff, {how})", "account", a.id)
                     if not cfg.projection.estimate_future_card_payments:
                         break
                     d = d + relativedelta(months=1)

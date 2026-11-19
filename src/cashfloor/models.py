@@ -105,6 +105,11 @@ class Account:
     last_synced: datetime | None = None
     active: bool = True
     pay_day: int | None = None  # day of month this card/loan is usually paid (assumed-payoff fallback)
+    pay_day_auto: int | None = None  # same, inferred from the card's own payment history; pay_day overrides
+
+    @property
+    def effective_pay_day(self) -> int | None:
+        return self.pay_day or self.pay_day_auto
     conn_id: str | None = None  # provider connection (SimpleFIN v2)
     extra: dict | None = None  # server-defined extra data, kept verbatim
     sync_error: str | None = None  # last provider error touching this account

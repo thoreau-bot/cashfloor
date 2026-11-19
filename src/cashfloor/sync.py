@@ -135,6 +135,16 @@ def run_sync(cfg: Config, db: Database, only: str | None = None, today: date | N
 
     apply_account_overrides(cfg, db)
 
+    # Where a card/loan has no due date, learn the day it usually gets paid.
+    from .projection.payday import LOOKBACK_DAYS, infer_pay_day
+
+    card_txs = db.list_transactions(since=today - timedelta(days=LOOKBACK_DAYS))
+    for a in db.list_accounts(active_only=False):
+        if a.type in (AccountType.CREDIT, AccountType.LOAN):
+            day = infer_pay_day(a, card_txs, today)
+            if day != a.pay_day_auto:
+                db.set_pay_day_auto(a.id, day)  # type: ignore[arg-type]
+
     # Roll scheduled dates forward past today — and past an occurrence that has
     # already posted (this morning's payroll), so the Scheduled page shows the
     # genuinely next date.

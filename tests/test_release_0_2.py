@@ -379,3 +379,37 @@ def test_mark_paid_drops_occurrence_and_rolls_item(tmp_path):
     assert db.get_item(it.id).next_date == today
     assert any("Car loan" in e for e in project(db, cfg, as_of=today).days[0].events)
     assert far.id is not None
+
+
+def test_pay_day_inferred_from_card_payment_history(tmp_path):
+    from cashfloor.models import Transaction
+    from cashfloor.projection.payday import infer_pay_day
+    from cashfloor.sync import run_sync
+
+    today = date(2026, 11, 19)
+    db = _db(tmp_path)
+    card = _card(db)
+    txs = []
+    for m, extra in ((6, False), (7, False), (8, True), (9, False), (10, False)):
+        txs.append(Transaction(None, card.id, f"p{m}", date(2026, m, 17), 180_00, "PAYMENT - THANK YOU"))
+        if extra:
+            txs.append(Transaction(None, card.id, f"x{m}", date(2026, m, 3), 50_00, "ONLINE PAYMENT"))  # early extra
+        txs.append(Transaction(None, card.id, f"c{m}", date(2026, m, 9), -42_10, "GROCERY MART"))  # a charge
+    db.upsert_transactions(txs)
+    assert infer_pay_day(card, db.list_transactions(), today) == 17
+    # projection uses it; a typed pay_day overrides it
+    cfg = _cfg()
+    cfg.general.data_dir = tmp_path / "data"
+    cfg.general.archive_dir = tmp_path / "statements"
+    cfg.general.inbox_dir = tmp_path / "inbox"
+    cfg.provider = []
+    cfg.ensure_dirs()
+    _checking(db)
+    run_sync(cfg, db, today=today)
+    assert db.get_account(card.id).pay_day_auto == 17
+    res = project(db, cfg, as_of=today)
+    days = [d.day for d in res.days for e in d.events if "assumed payoff" in e]
+    assert days[0] == date(2026, 12, 17) and "day seen in history" in res.days[28].events[0]
+    db.set_account_user_fields(card.id, pay_day=5)
+    res = project(db, cfg, as_of=today)
+    assert [d.day for d in res.days for e in d.events if "assumed payoff" in e][0] == date(2026, 12, 5)

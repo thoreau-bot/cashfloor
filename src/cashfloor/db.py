@@ -192,7 +192,8 @@ class Database:
     # -- lifecycle ---------------------------------------------------------
     # Columns added after v1; applied to existing databases on open.
     _ADDED_COLUMNS = {
-        "accounts": [("conn_id", "TEXT"), ("extra", "TEXT"), ("sync_error", "TEXT"), ("pay_day", "INTEGER")],
+        "accounts": [("conn_id", "TEXT"), ("extra", "TEXT"), ("sync_error", "TEXT"), ("pay_day", "INTEGER"),
+                     ("pay_day_auto", "INTEGER")],
         "transactions": [("extra", "TEXT")],
         "statements": [("title", "TEXT")],
     }
@@ -293,6 +294,7 @@ class Database:
             active=bool(r["active"]),
             conn_id=r["conn_id"],
             pay_day=r["pay_day"],
+            pay_day_auto=r["pay_day_auto"],
             extra=json.loads(r["extra"]) if r["extra"] else None,
             sync_error=r["sync_error"],
         )
@@ -597,6 +599,10 @@ class Database:
                     ),
                 )
         return it
+
+    def set_pay_day_auto(self, account_id: int, day: int | None) -> None:
+        with self.tx() as c:
+            c.execute("UPDATE accounts SET pay_day_auto=? WHERE id=?", (day, account_id))
 
     def set_manual_balance(self, account_id: int, balance: int) -> None:
         with self.tx() as c:
