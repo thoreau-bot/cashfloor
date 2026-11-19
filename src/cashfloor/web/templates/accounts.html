@@ -1,10 +1,10 @@
 {% extends "base.html" %}
 {% block body %}
 <h2>Accounts</h2>
-<p class="muted small">Give each account a short <em>key</em> (used in config and archive folder names), a type, and tick <em>pool</em> for the accounts you actually spend from. <em>Last 4</em> is how downloaded statements get matched to an account (SimpleFIN doesn't supply it). For cards/loans/utilities you can also set the next due date by hand if no statement has been parsed yet.</p>
+<p class="muted small">Give each account a short <em>key</em> (used in config and archive folder names), a type, and tick <em>pool</em> for the accounts you actually spend from. <em>Last 4</em> is how downloaded statements get matched to an account (SimpleFIN doesn't supply it). For cards/loans/utilities you can also set the next due date by hand if no statement has been parsed yet. <em>Pay day</em> is the day of month a card with no known due date is assumed to be paid in full (see Settings → assume card payoff).</p>
 <div class="card">
 <table>
-  <tr><th>Institution / name</th><th>Key</th><th>Nickname</th><th>Last 4</th><th>Type</th><th>Pool</th><th>Active</th><th class="num">Balance</th><th>Due date</th><th>Stmt bal</th><th>Min</th><th></th></tr>
+  <tr><th>Institution / name</th><th>Key</th><th>Nickname</th><th>Last 4</th><th>Type</th><th>Pool</th><th>Active</th><th class="num">Balance</th><th>Due date</th><th>Stmt bal</th><th>Min</th><th>Pay day</th><th></th></tr>
   {% for a in accounts %}
   <tr>
     <form method="post" action="/accounts/{{ a.id }}">
@@ -15,14 +15,34 @@
     <td><select name="type">{% for t in types %}<option value="{{ t.value }}" {{ 'selected' if t == a.type }}>{{ t.value }}</option>{% endfor %}</select></td>
     <td><input type="checkbox" name="in_pool" value="true" {{ 'checked' if a.in_pool }}></td>
     <td><input type="checkbox" name="active" value="true" {{ 'checked' if a.active }}></td>
-    <td class="num">{{ a.balance | money }}</td>
+    <td class="num">{% if a.provider == 'manual' %}<input name="balance" value="{{ a.balance | money }}" size="9" class="num">{% else %}{{ a.balance | money }}{% endif %}</td>
     <td><input type="date" name="due_date" value="{{ a.due_date or '' }}"></td>
     <td><input name="statement_balance" value="{{ a.statement_balance | money }}" size="8"></td>
     <td><input name="minimum_payment" value="{{ a.minimum_payment | money }}" size="6"></td>
+    <td><input name="pay_day" value="{{ a.pay_day or '' }}" size="2" maxlength="2" placeholder="1"></td>
     <td><button>Save</button></td>
     </form>
   </tr>
   {% endfor %}
 </table>
+</div>
+
+<h2>Add a manual account</h2>
+<p class="muted small">For anything no provider supplies: an insurance policy, a utility, a card SimpleFIN can't see. Sync never touches it; you keep its balance and due figures current here. Enter a card balance as a negative number (money owed).</p>
+<div class="card">
+<form method="post" action="/accounts/add">
+  <input name="institution" placeholder="Institution" required size="16">
+  <input name="name" placeholder="Account name" required size="16">
+  <select name="type">{% for t in types %}<option value="{{ t.value }}" {{ 'selected' if t.value == 'utility' }}>{{ t.value }}</option>{% endfor %}</select>
+  <input name="key" placeholder="key" size="8">
+  <input name="last4" placeholder="last 4" size="4" maxlength="4">
+  <input name="balance" placeholder="Balance" size="9">
+  <label class="small"><input type="checkbox" name="in_pool" value="true"> pool</label>
+  <input type="date" name="due_date">
+  <input name="statement_balance" placeholder="Amount due" size="8">
+  <input name="minimum_payment" placeholder="Minimum" size="6">
+  <input name="pay_day" placeholder="pay day" size="3" maxlength="2">
+  <button>Add Account</button>
+</form>
 </div>
 {% endblock %}

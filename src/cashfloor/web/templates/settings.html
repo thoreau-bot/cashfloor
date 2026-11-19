@@ -73,6 +73,18 @@
     <td class="small muted">{{ base['projection.use_available_balance'] }}</td>
   </tr>
   <tr>
+    <td>Assume card payoff</td>
+    <td><input type="checkbox" name="projection.assume_card_payoff" value="true" {{ 'checked' if current['projection.assume_card_payoff'] }}></td>
+    <td class="small muted">{{ help['projection.assume_card_payoff'] }}</td>
+    <td class="small muted">{{ base['projection.assume_card_payoff'] }}</td>
+  </tr>
+  <tr>
+    <td>Default card pay day</td>
+    <td><input name="projection.default_card_pay_day" value="{{ current['projection.default_card_pay_day'] }}" size="4"></td>
+    <td class="small muted">{{ help['projection.default_card_pay_day'] }}</td>
+    <td class="small muted">{{ base['projection.default_card_pay_day'] }}</td>
+  </tr>
+  <tr>
     <td>Stale after (days)</td>
     <td><input name="projection.stale_after_days" value="{{ current['projection.stale_after_days'] }}" size="4"></td>
     <td class="small muted">{{ help['projection.stale_after_days'] }}</td>

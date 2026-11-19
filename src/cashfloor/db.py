@@ -191,7 +191,7 @@ class Database:
     # -- lifecycle ---------------------------------------------------------
     # Columns added after v1; applied to existing databases on open.
     _ADDED_COLUMNS = {
-        "accounts": [("conn_id", "TEXT"), ("extra", "TEXT"), ("sync_error", "TEXT")],
+        "accounts": [("conn_id", "TEXT"), ("extra", "TEXT"), ("sync_error", "TEXT"), ("pay_day", "INTEGER")],
         "transactions": [("extra", "TEXT")],
         "statements": [("title", "TEXT")],
     }
@@ -260,6 +260,7 @@ class Database:
             last_synced=_pdt(r["last_synced"]),
             active=bool(r["active"]),
             conn_id=r["conn_id"],
+            pay_day=r["pay_day"],
             extra=json.loads(r["extra"]) if r["extra"] else None,
             sync_error=r["sync_error"],
         )
@@ -324,10 +325,13 @@ class Database:
         in_pool: bool | None = None,
         active: bool | None = None,
         last4: str | None = None,
+        pay_day: int | None | str = "unset",
     ) -> None:
         sets, vals = [], []
         if last4 is not None:
             sets.append("last4=?"); vals.append(last4.strip()[-4:] or None)
+        if pay_day != "unset":
+            sets.append("pay_day=?"); vals.append(int(pay_day) if pay_day not in (None, "") else None)
         if key is not None:
             sets.append("key=?"); vals.append(key or None)
         if nickname is not None:
@@ -357,6 +361,31 @@ class Database:
                 "UPDATE accounts SET due_date=?, statement_balance=?, minimum_payment=? WHERE id=?",
                 (_d(due_date), statement_balance, minimum_payment, account_id),
             )
+
+    def add_manual_account(
+        self, *, name: str, institution: str, type: AccountType, key: str | None = None,
+        last4: str | None = None, balance: int = 0, in_pool: bool = False,
+        statement_balance: int | None = None, minimum_payment: int | None = None,
+        due_date: date | None = None, pay_day: int | None = None, nickname: str | None = None,
+    ) -> Account:
+        """An account no provider supplies (a policy, a utility, a card SimpleFIN
+        can't see).  Never touched by sync; the user maintains its figures."""
+        import re as _re
+
+        slug = _re.sub(r"[^a-z0-9]+", "-", f"{institution}-{name}".lower()).strip("-")
+        ext = f"manual:{slug}"
+        n = 2
+        while self.conn.execute("SELECT 1 FROM accounts WHERE provider='manual' AND external_id=?", (ext,)).fetchone():
+            ext = f"manual:{slug}-{n}"
+            n += 1
+        a = Account(id=None, provider="manual", external_id=ext, name=name, institution=institution, type=type,
+                    key=key or None, nickname=nickname or None, last4=last4 or None, balance=balance, in_pool=in_pool,
+                    statement_balance=statement_balance, minimum_payment=minimum_payment, due_date=due_date,
+                    balance_as_of=datetime.now(), last_synced=datetime.now(), pay_day=pay_day)
+        saved = self.upsert_account(a)
+        self.set_account_user_fields(saved.id, key=key or None, nickname=nickname or None, in_pool=in_pool,  # type: ignore[arg-type]
+                                     pay_day=pay_day)
+        return self.get_account(saved.id)  # type: ignore[arg-type,return-value]
 
     def get_account(self, account_id: int) -> Account | None:
         r = self.conn.execute("SELECT * FROM accounts WHERE id=?", (account_id,)).fetchone()
@@ -536,6 +565,17 @@ class Database:
                     ),
                 )
         return it
+
+    def set_manual_balance(self, account_id: int, balance: int) -> None:
+        with self.tx() as c:
+            c.execute("UPDATE accounts SET balance=?, balance_as_of=?, last_synced=? WHERE id=? AND provider='manual'",
+                      (balance, datetime.now().isoformat(), datetime.now().isoformat(), account_id))
+            c.execute("INSERT OR REPLACE INTO balance_history(account_id, day, balance) VALUES (?,?,?)",
+                      (account_id, date.today().isoformat(), balance))
+
+    def set_item_counter_account(self, item_id: int, counter_account_id: int | None) -> None:
+        with self.tx() as c:
+            c.execute("UPDATE scheduled_items SET counter_account_id=? WHERE id=?", (counter_account_id, item_id))
 
     def get_item(self, item_id: int) -> ScheduledItem | None:
         r = self.conn.execute("SELECT * FROM scheduled_items WHERE id=?", (item_id,)).fetchone()

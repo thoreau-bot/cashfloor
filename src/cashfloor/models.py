@@ -43,8 +43,14 @@ class Frequency(StrEnum):
 
 
 def to_cents(amount: float | str | int) -> int:
+    """Parse a user-typed or formatted amount: '1,234.56', '$-12.00', '(12.00)', -12.0."""
     from decimal import ROUND_HALF_UP, Decimal
 
+    if isinstance(amount, str):
+        s = amount.strip().replace(",", "").replace("$", "").replace("\u2212", "-")
+        if s.startswith("(") and s.endswith(")"):
+            s = "-" + s[1:-1]
+        amount = s or "0"
     return int((Decimal(str(amount)) * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
 
 
@@ -74,6 +80,7 @@ class Account:
     balance_as_of: datetime | None = None
     last_synced: datetime | None = None
     active: bool = True
+    pay_day: int | None = None  # day of month this card/loan is usually paid (assumed-payoff fallback)
     conn_id: str | None = None  # provider connection (SimpleFIN v2)
     extra: dict | None = None  # server-defined extra data, kept verbatim
     sync_error: str | None = None  # last provider error touching this account

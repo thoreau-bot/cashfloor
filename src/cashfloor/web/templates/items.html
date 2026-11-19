@@ -1,14 +1,24 @@
 {% extends "base.html" %}
 {% block body %}
 <h2>Scheduled inflows &amp; outflows</h2>
-<p class="muted small">Amounts are signed from the account's point of view: a paycheck into checking is <strong>+</strong>, rent is <strong>−</strong>. Detected items (source <em>detected</em>) are excluded from the projection until confirmed.</p>
+<p class="muted small">Amounts are signed from the account's point of view: a paycheck into checking is <strong>+</strong>, rent is <strong>−</strong>. Detected items (source <em>detected</em>) are excluded from the projection until confirmed. <strong>Pays</strong> links an outflow to the card, loan or utility it pays, so that account's own due-date event isn't counted a second time; a <span class="warn">suggested</span> link is a guess from the name until you save it.</p>
 <div class="card">
 <table>
-  <tr><th>Name</th><th>Account</th><th class="num">Amount</th><th>Freq</th><th>Next</th><th>Source</th><th>Conf</th><th>Status</th><th></th></tr>
+  <tr><th>Name</th><th>Account</th><th>Pays</th><th class="num">Amount</th><th>Freq</th><th>Next</th><th>Source</th><th>Conf</th><th>Status</th><th></th></tr>
   {% for i in items %}
   <tr class="{{ 'muted' if not i.active }}">
     <td>{{ i.name }}<br><span class="small muted">{{ i.notes }}</span></td>
-    <td>{{ accts[i.account_id].display_name if i.account_id in accts else '?' }}{% if i.counter_account_id %} → {{ accts[i.counter_account_id].display_name if i.counter_account_id in accts else '?' }}{% endif %}</td>
+    <td>{{ accts[i.account_id].display_name if i.account_id in accts else '?' }}</td>
+    <td style="white-space:nowrap">{% if i.amount < 0 %}
+      <form class="inline" method="post" action="/items/{{ i.id }}/pays">
+        {% set sug = suggestions.get(i.id) %}
+        <select name="counter_account_id" class="{{ 'warn' if sug and not i.counter_account_id }}">
+          <option value="">—</option>
+          {% for id, a in accts.items() %}{% if id != i.account_id %}<option value="{{ id }}" {{ 'selected' if id == (i.counter_account_id or sug) }}>{{ a.display_name }}{{ ' (suggested)' if id == sug and not i.counter_account_id }}</option>{% endif %}{% endfor %}
+        </select>
+        <button class="secondary">Save</button>
+      </form>
+    {% elif i.counter_account_id %}→ {{ accts[i.counter_account_id].display_name if i.counter_account_id in accts else '?' }}{% endif %}</td>
     <td class="num {{ 'good' if i.amount > 0 else 'bad' }}">{{ i.amount | money }}</td>
     <td>{{ i.frequency.value }}</td><td>{{ i.next_date }}</td><td>{{ i.source.value }}</td><td>{{ '%.2f' % i.confidence }}</td>
     <td>{% if not i.active %}inactive{% elif not i.confirmed %}<span class="warn">unconfirmed</span>{% else %}active{% endif %}</td>
@@ -31,7 +41,7 @@
   <input name="amount" placeholder="Amount (+in / −out)" required size="12">
   <select name="frequency">{% for f in freqs %}<option value="{{ f.value }}">{{ f.value }}</option>{% endfor %}</select>
   <input type="date" name="next_date" required>
-  <select name="counter_account_id"><option value="">(not a transfer)</option>{% for id, a in accts.items() %}<option value="{{ id }}">→ {{ a.display_name }}</option>{% endfor %}</select>
+  <select name="counter_account_id"><option value="">pays / transfers to: nothing</option>{% for id, a in accts.items() %}<option value="{{ id }}">→ {{ a.display_name }}</option>{% endfor %}</select>
   <select name="weekend_rule"><option value="none">weekend: as-is</option><option value="previous">weekend: previous biz day</option><option value="next">weekend: next biz day</option></select>
   <button>Add</button>
 </form>

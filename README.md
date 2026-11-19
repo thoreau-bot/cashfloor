@@ -100,8 +100,18 @@ card/loan/utility due dates (from statements or manual)     ──► payment ev
   (`+3000 biweekly` paycheck, `-2200 monthly` rent). Frequencies: once,
   weekly, biweekly, semimonthly, monthly, quarterly, yearly; optional
   weekend rule and end date.
-* **Transfers** between two pool accounts net to zero. A transfer *to* a card
-  account replaces the automatic due-date payment for that card.
+* **Transfers** between two pool accounts net to zero. An item that **pays**
+  a card, loan or utility (set on the Scheduled page; suggested from the name)
+  replaces that account's automatic due-date payment, so a detected autopay
+  and the card's own due date are never both counted.
+* **Cards with no due date** and no linked payment are assumed to be paid in
+  full once a month (on the account's *pay day*, else the default day in
+  Settings) — a conservative floor beats a silently optimistic one. Switch
+  it off in Settings if you'd rather they be ignored.
+* **Manual accounts** cover anything no provider supplies — an insurance
+  policy, a utility, a card the Bridge can't see. Add them on the Accounts
+  page (or `cashfloor accounts add`) and keep their balance and due figures
+  current yourself; sync never touches them.
 * **Recurring detection** proposes items from transaction history
   (≥3 hits, stable interval, amounts within tolerance). Proposals are
   *unconfirmed* and excluded from the projection until you confirm them —
@@ -154,8 +164,8 @@ cashfloor ingest PATH...            file PDFs without a sync (--copy to keep ori
 cashfloor floor [--json]            projection summary
 cashfloor discretionary             just the number (for scripts / widgets)
 cashfloor serve                     web dashboard + daily scheduler
-cashfloor accounts list|set|due     label accounts, set due dates by hand
-cashfloor items list|add|confirm|dismiss|delete
+cashfloor accounts list|add|set|due label accounts, add manual ones, set due dates by hand
+cashfloor items list|add|confirm|dismiss|delete|pays|suggest-links
 cashfloor secret set|set-json|delete
 cashfloor simplefin setup TOKEN
 ```

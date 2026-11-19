@@ -162,6 +162,8 @@ def create_app(cfg: Config, with_scheduler: bool = False) -> FastAPI:
             "projection.use_available_balance": cfg.projection.use_available_balance,
             "projection.stale_after_days": cfg.projection.stale_after_days,
             "general.keep_raw_responses": cfg.general.keep_raw_responses,
+            "projection.assume_card_payoff": cfg.projection.assume_card_payoff,
+            "projection.default_card_pay_day": cfg.projection.default_card_pay_day,
         }
         current = {
             "projection.horizon_days": c.projection.horizon_days,
@@ -177,6 +179,8 @@ def create_app(cfg: Config, with_scheduler: bool = False) -> FastAPI:
             "projection.use_available_balance": c.projection.use_available_balance,
             "projection.stale_after_days": c.projection.stale_after_days,
             "general.keep_raw_responses": c.general.keep_raw_responses,
+            "projection.assume_card_payoff": c.projection.assume_card_payoff,
+            "projection.default_card_pay_day": c.projection.default_card_pay_day,
         }
         raw_dir = cfg.general.data_dir / "raw"
         raw_files = sorted(raw_dir.glob("*.json"), reverse=True)[:10] if raw_dir.exists() else []
@@ -193,7 +197,7 @@ def create_app(cfg: Config, with_scheduler: bool = False) -> FastAPI:
         d = db()
         try:
             checkboxes = {"projection.estimate_future_card_payments", "projection.use_available_balance",
-                          "general.keep_raw_responses"}
+                          "general.keep_raw_responses", "projection.assume_card_payoff"}
             for key in GUI_SETTINGS:
                 if key in checkboxes:
                     val = "true" if form.get(key) else "false"
@@ -245,18 +249,42 @@ def create_app(cfg: Config, with_scheduler: bool = False) -> FastAPI:
             d.close()
         return templates.TemplateResponse(request, "accounts.html", {"accounts": rows, "types": list(AccountType)})
 
+    @app.post("/accounts/add")
+    def account_add(name: str = Form(...), institution: str = Form(...), type: str = Form("utility"),
+                    key: str = Form(""), last4: str = Form(""), balance: str = Form("0"), in_pool: bool = Form(False),
+                    due_date: str = Form(""), statement_balance: str = Form(""), minimum_payment: str = Form(""),
+                    pay_day: str = Form("")):
+        d = db()
+        try:
+            d.add_manual_account(
+                name=name, institution=institution, type=AccountType(type), key=key or None, last4=last4 or None,
+                balance=to_cents(balance) if balance.strip() else 0, in_pool=in_pool,
+                statement_balance=to_cents(statement_balance) if statement_balance.strip() else None,
+                minimum_payment=to_cents(minimum_payment) if minimum_payment.strip() else None,
+                due_date=date.fromisoformat(due_date) if due_date else None,
+                pay_day=int(pay_day) if pay_day.strip() else None,
+            )
+        finally:
+            d.close()
+        return RedirectResponse("/accounts", status_code=303)
+
     @app.post("/accounts/{account_id}")
     def account_update(account_id: int, key: str = Form(""), nickname: str = Form(""), type: str = Form("other"),
                        in_pool: bool = Form(False), active: bool = Form(False), last4: str = Form(""),
+                       pay_day: str = Form(""), balance: str = Form(""),
                        due_date: str = Form(""), statement_balance: str = Form(""), minimum_payment: str = Form("")):
         d = db()
         try:
             d.set_account_user_fields(account_id, key=key, nickname=nickname, type=AccountType(type),
-                                      in_pool=in_pool, active=active, last4=last4)
+                                      in_pool=in_pool, active=active, last4=last4,
+                                      pay_day=int(pay_day) if pay_day.strip() else None)
             if due_date:
                 d.set_account_due(account_id, due_date=date.fromisoformat(due_date),
                                   statement_balance=to_cents(statement_balance) if statement_balance else None,
                                   minimum_payment=to_cents(minimum_payment) if minimum_payment else None)
+            a = d.get_account(account_id)
+            if a and a.provider == "manual" and balance.strip():
+                d.set_manual_balance(account_id, to_cents(balance))
         finally:
             d.close()
         return RedirectResponse("/accounts", status_code=303)
@@ -269,7 +297,25 @@ def create_app(cfg: Config, with_scheduler: bool = False) -> FastAPI:
             accts = {a.id: a for a in d.list_accounts(active_only=False)}
         finally:
             d.close()
-        return templates.TemplateResponse(request, "items.html", {"items": rows, "accts": accts, "freqs": list(Frequency)})
+        from ..projection.links import suggest_counter_account
+
+        suggestions = {}
+        for it in rows:
+            if it.counter_account_id is None and it.amount < 0:
+                sug = suggest_counter_account(it, list(accts.values()))
+                if sug:
+                    suggestions[it.id] = sug.id
+        return templates.TemplateResponse(request, "items.html", {"items": rows, "accts": accts,
+                                                                  "freqs": list(Frequency), "suggestions": suggestions})
+
+    @app.post("/items/{item_id}/pays")
+    def item_pays(item_id: int, counter_account_id: str = Form("")):
+        d = db()
+        try:
+            d.set_item_counter_account(item_id, int(counter_account_id) if counter_account_id else None)
+        finally:
+            d.close()
+        return RedirectResponse("/items", status_code=303)
 
     @app.post("/items/add")
     def item_add(name: str = Form(...), account_id: int = Form(...), amount: str = Form(...), frequency: str = Form(...),

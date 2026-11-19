@@ -69,6 +69,14 @@ def seed(cfg: Config) -> None:
                                       statement_balance=16_240, due_date=TODAY + timedelta(days=19),
                                       balance_as_of=NOW, last_synced=NOW))
     db.set_account_user_fields(power.id, key="power", nickname="Fabrikam Power", last4="9077")
+    # A card the Bridge reports without a due date: projected as an assumed monthly payoff.
+    card2 = db.upsert_account(Account(id=None, provider="simplefin", external_id="ACT-4", name="PROSEWARE REWARDS VISA",
+                                      institution="Proseware Bank", type=AccountType.CREDIT, balance=-41_275,
+                                      balance_as_of=NOW, last_synced=NOW, conn_id="CONN-nw"))
+    db.set_account_user_fields(card2.id, key="proseware", nickname="Proseware Rewards", last4="6610", pay_day=20)
+    # An account no provider supplies, kept by hand.
+    db.add_manual_account(name="Homeowners Policy", institution="Woodgrove Mutual", type=AccountType.UTILITY,
+                          key="home-ins", last4="3382", statement_balance=48_900, due_date=TODAY + timedelta(days=40))
 
     items = [
         ScheduledItem(None, "Acme Widgets Payroll", chk.id, 284_000, Frequency.BIWEEKLY, TODAY + timedelta(days=4),
@@ -87,6 +95,9 @@ def seed(cfg: Config) -> None:
                       ItemSource.MANUAL, notes="one-off"),
         ScheduledItem(None, "Transfer to Savings", chk.id, -50_000, Frequency.MONTHLY, TODAY + timedelta(days=5),
                       ItemSource.TRANSFER, counter_account_id=sav.id),
+        ScheduledItem(None, "Contoso Card Autopay", chk.id, -142_310, Frequency.MONTHLY, TODAY + timedelta(days=10),
+                      ItemSource.DETECTED, 0.86, counter_account_id=card.id,
+                      notes="pays Contoso Platinum; statement balance each month"),
         ScheduledItem(None, "Streaming — Fourth Coffee TV", chk.id, -1_599, Frequency.MONTHLY, TODAY + timedelta(days=2),
                       ItemSource.DETECTED, 0.79, confirmed=False, notes="detected from 7 transactions"),
         ScheduledItem(None, "Gym — Alpine Ski House", chk.id, -4_500, Frequency.MONTHLY, TODAY + timedelta(days=11),

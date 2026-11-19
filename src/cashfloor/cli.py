@@ -182,16 +182,44 @@ def accounts_set(
     pool: bool | None = typer.Option(None, "--pool/--no-pool"),
     active: bool | None = typer.Option(None, "--active/--inactive"),
     last4: str | None = typer.Option(None, help="Last 4 digits, used to match statements"),
+    pay_day: int | None = typer.Option(None, help="Usual day of month this card is paid"),
 ) -> None:
-    """Label an account: short key, nickname, type, last-4, and whether it's in the cash pool."""
+    """Label an account: short key, nickname, type, last-4, pay day, and whether it's in the cash pool."""
     db = _db()
     try:
         db.set_account_user_fields(account_id, key=key, nickname=nickname,
                                    type=AccountType(type_) if type_ else None, in_pool=pool, active=active,
-                                   last4=last4)
+                                   last4=last4, pay_day=pay_day if pay_day is not None else "unset")
     finally:
         db.close()
     rprint("[green]updated[/green]")
+
+
+@accounts_app.command("add")
+def accounts_add(
+    name: str,
+    institution: str,
+    type_: str = typer.Option("utility", "--type"),
+    key: str | None = typer.Option(None),
+    last4: str | None = typer.Option(None),
+    balance: float = typer.Option(0.0, help="Current balance (negative for money owed on a card)"),
+    due: str | None = typer.Option(None, help="Next due date YYYY-MM-DD"),
+    amount: float | None = typer.Option(None, help="Amount due on that date"),
+    minimum: float | None = typer.Option(None),
+    pay_day: int | None = typer.Option(None, help="Usual day of month paid (for assumed card payoffs)"),
+    pool: bool = typer.Option(False, "--pool"),
+) -> None:
+    """Add an account no provider supplies (a policy, a utility, a card SimpleFIN can't see)."""
+    db = _db()
+    try:
+        a = db.add_manual_account(name=name, institution=institution, type=AccountType(type_), key=key, last4=last4,
+                                  balance=to_cents(balance), in_pool=pool,
+                                  statement_balance=to_cents(amount) if amount is not None else None,
+                                  minimum_payment=to_cents(minimum) if minimum is not None else None,
+                                  due_date=date.fromisoformat(due) if due else None, pay_day=pay_day)
+    finally:
+        db.close()
+    rprint(f"[green]added account #{a.id}[/green] {a.institution} · {a.display_name}")
 
 
 @accounts_app.command("due")
@@ -272,6 +300,42 @@ def items_add(
     finally:
         db.close()
     rprint(f"[green]added #{it.id}[/green]")
+
+
+@items_app.command("pays")
+def items_pays(item_id: int, account_id: int | None = typer.Argument(None, help="Omit to clear")) -> None:
+    """Mark a scheduled payment as paying a specific account (e.g. a card autopay),
+    so that account's own due-date event isn't counted as well."""
+    db = _db()
+    try:
+        db.set_item_counter_account(item_id, account_id)
+    finally:
+        db.close()
+    rprint("[green]updated[/green]")
+
+
+@items_app.command("suggest-links")
+def items_suggest_links(apply: bool = typer.Option(False, help="Apply suggestions to unlinked items")) -> None:
+    """Guess which account each outflow pays, from name overlap."""
+    from .projection.links import suggest_counter_account
+
+    db = _db()
+    try:
+        accts = db.list_accounts()
+        n = 0
+        for it in db.list_items():
+            if it.counter_account_id or it.amount >= 0:
+                continue
+            a = suggest_counter_account(it, accts)
+            if a:
+                rprint(f"#{it.id} {it.name!r} → {a.institution} · {a.display_name}" + ("  [green]linked[/green]" if apply else ""))
+                if apply:
+                    db.set_item_counter_account(it.id, a.id)  # type: ignore[arg-type]
+                    n += 1
+    finally:
+        db.close()
+    if apply:
+        rprint(f"[green]{n} item(s) linked[/green]")
 
 
 @items_app.command("confirm")

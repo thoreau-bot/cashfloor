@@ -37,6 +37,11 @@ class ProjectionConfig(BaseModel):
     use_available_balance: bool = True
     # Flag the floor as unreliable when a pool account's balance is older than this.
     stale_after_days: int = 3
+    # A credit card with no known due date and no linked payment item is assumed
+    # to be paid in full each month (conservative) rather than ignored.
+    assume_card_payoff: bool = True
+    # Day of month for that assumed payoff when the account has no pay_day of its own.
+    default_card_pay_day: int = 1
 
 
 class RecurringConfig(BaseModel):
@@ -135,6 +140,8 @@ GUI_SETTINGS: dict[str, str] = {
     "projection.estimate_future_card_payments": "Repeat the last card payment monthly through the horizon",
     "projection.use_available_balance": "Start from the available balance (net of holds) when the bank reports one",
     "projection.stale_after_days": "Warn when a pool account's balance is older than this many days",
+    "projection.assume_card_payoff": "Cards with no due date and no linked payment are assumed paid in full monthly",
+    "projection.default_card_pay_day": "Day of month for assumed card payoffs (per-account pay day overrides)",
     "general.keep_raw_responses": "Keep raw provider JSON under data/raw/ for inspection",
     "recurring.min_occurrences": "Hits before a recurring pattern is proposed",
     "recurring.amount_tolerance": "Allowed amount variance (fraction) within a series",

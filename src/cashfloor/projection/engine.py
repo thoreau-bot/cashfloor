@@ -99,6 +99,24 @@ def build_events(
             if a.type not in DUE_TYPES or not a.active or a.id in covered_counter_ids:
                 continue
             if a.due_date is None:
+                # No due date known: assume the card is paid in full each month
+                # (conservative) unless the user turned that off.
+                if a.type != AccountType.CREDIT or not cfg.projection.assume_card_payoff:
+                    continue
+                owed = -a.balance if a.balance < 0 else 0
+                if owed <= 0:
+                    continue
+                day = a.pay_day or cfg.projection.default_card_pay_day
+                d = as_of.replace(day=min(day, 28))
+                if d < as_of:
+                    d = d + relativedelta(months=1)
+                guard = 0
+                while d <= horizon_end and guard < 24:
+                    guard += 1
+                    _event(events, d, -owed, f"{a.display_name} payment (assumed payoff)")
+                    if not cfg.projection.estimate_future_card_payments:
+                        break
+                    d = d + relativedelta(months=1)
                 continue
             amt = a.minimum_payment if cfg.projection.card_payment_mode == "minimum" else a.statement_balance
             if amt is None:

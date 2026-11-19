@@ -29,7 +29,9 @@ PERIOD_RE = re.compile(
 )
 MONEY_RE = re.compile(r"-?\$?\(?-?[\d,]+\.\d{2}\)?")
 ROW_RE = re.compile(r"^(\d{2}/\d{2})\s+(.*?)\s*((?:-?\$?\(?[\d,]+\.\d{2}\)?\s*){1,3})$")
-STOP_RE = re.compile(r"^(page \d+ of \d+|online:|phone:|mobile:|transactions( \(continued\))?$|date\s+description)", re.I)
+STOP_RE = re.compile(
+    r"^(page \d+ of \d+|online:|phone:|mobile:|transactions( \(continued\))?$|date\s+description)", re.I
+)
 GENERIC_PREFIX_RE = re.compile(
     r"^(ach (withdrawal|dep(osit)?|credit|debit)|debit card purchase|atm (withdrawal|rebate|deposit)|"
     r"usaa (debit|credit)|pos (purchase|debit)|check(?: #?\d+)?|online (transfer|payment)|wire (in|out)|"

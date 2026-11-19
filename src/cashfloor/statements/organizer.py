@@ -26,8 +26,8 @@ from pathlib import Path
 from ..config import Config
 from ..db import Database
 from ..models import Account, AccountType, Statement, Transaction, to_cents
-from .parser import ParsedStatement, parse_statement_text
 from ..projection.recurring import normalize_payee
+from .parser import ParsedStatement, parse_statement_text
 from .transactions import parse_transactions
 
 TX_ACCOUNT_TYPES = (AccountType.CHECKING, AccountType.SAVINGS)
