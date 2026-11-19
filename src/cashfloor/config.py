@@ -42,12 +42,17 @@ class ProjectionConfig(BaseModel):
     assume_card_payoff: bool = True
     # Day of month for that assumed payoff when the account has no pay_day of its own.
     default_card_pay_day: int = 1
+    # Warn this many days before an FSA's plan-year end (Dec 31) while it still holds money.
+    fsa_warn_days: int = 61
 
 
 class RecurringConfig(BaseModel):
     min_occurrences: int = 3
     date_tolerance_days: int = 3
     amount_tolerance: float = 0.15
+    # Two inflow series whose amounts differ by less than this and whose dates
+    # interleave without colliding are treated as one income source.
+    income_merge_tolerance: float = 0.10
 
 
 class SchedulerConfig(BaseModel):
@@ -142,9 +147,11 @@ GUI_SETTINGS: dict[str, str] = {
     "projection.stale_after_days": "Warn when a pool account's balance is older than this many days",
     "projection.assume_card_payoff": "Cards with no due date and no linked payment are assumed paid in full monthly",
     "projection.default_card_pay_day": "Day of month for assumed card payoffs (per-account pay day overrides)",
+    "projection.fsa_warn_days": "Days before Dec 31 to start warning about unspent FSA money",
     "general.keep_raw_responses": "Keep raw provider JSON under data/raw/ for inspection",
     "recurring.min_occurrences": "Hits before a recurring pattern is proposed",
     "recurring.amount_tolerance": "Allowed amount variance (fraction) within a series",
+    "recurring.income_merge_tolerance": "Inflow series this close in amount that fill each other's gaps = one paycheck",
     "scheduler.daily_sync_time": "Local time (HH:MM) for the daily sync",
     "general.timezone": "IANA time zone for 'today' and the scheduler",
     "simplefin.lookback_days": "Days of history to request from SimpleFIN each sync",

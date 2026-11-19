@@ -108,6 +108,13 @@ card/loan/utility due dates (from statements or manual)     ──► payment ev
   full once a month (on the account's *pay day*, else the default day in
   Settings) — a conservative floor beats a silently optimistic one. Switch
   it off in Settings if you'd rather they be ignored.
+* **Split paychecks** — the same income under two descriptors, each with
+  holes where the other posted — are folded into one series when amounts are
+  within `income_merge_tolerance` (10%), dates don't collide, and the merge is
+  steadier than either half. The half with more hits sets the amount.
+* **Investments** (401k, IRA, brokerage, HSA, FSA) live on their own tab and
+  never touch the floor. An FSA is use-it-or-lose-it: its forfeiture at Dec 31
+  is shown, and the dashboard warns from `fsa_warn_days` (61) before year end.
 * **Manual accounts** cover anything no provider supplies — an insurance
   policy, a utility, a card the Bridge can't see. Add them on the Accounts
   page (or `cashfloor accounts add`) and keep their balance and due figures

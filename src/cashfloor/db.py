@@ -5,6 +5,7 @@ readable and the database is easy to inspect with any SQLite tool.
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -207,7 +208,27 @@ class Database:
             "INSERT OR REPLACE INTO meta(key, value) VALUES ('schema_version', ?)",
             (str(SCHEMA_VERSION),),
         )
+        self._one_time("retype_hsa_fsa", self._retype_hsa_fsa)
         self.conn.commit()
+
+    def _one_time(self, name: str, fn) -> None:
+        if self.conn.execute("SELECT 1 FROM meta WHERE key=?", (f"migrated:{name}",)).fetchone():
+            return
+        fn()
+        self.conn.execute("INSERT INTO meta(key, value) VALUES (?, '1')", (f"migrated:{name}",))
+
+    def _retype_hsa_fsa(self) -> None:
+        """0.2.0 added hsa/fsa types; accounts guessed as 'investment' before
+        that are re-typed from their name.  Hand-set types are not touched."""
+        for r in self.conn.execute("SELECT id, name, nickname FROM accounts WHERE type='investment'").fetchall():
+            n = f"{r['name']} {r['nickname'] or ''}".lower()
+            new = None
+            if re.search(r"\bfsa\b|flexible spending|flex spending", n):
+                new = "fsa"
+            elif re.search(r"\bhsa\b|health savings", n):
+                new = "hsa"
+            if new:
+                self.conn.execute("UPDATE accounts SET type=? WHERE id=?", (new, r["id"]))
 
     def close(self) -> None:
         self.conn.close()

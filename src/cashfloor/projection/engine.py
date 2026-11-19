@@ -138,6 +138,22 @@ def build_events(
     return events, unconfirmed
 
 
+def fsa_year_end(as_of: date) -> date:
+    return date(as_of.year, 12, 31)
+
+
+def fsa_warnings(cfg: Config, accounts: list[Account], as_of: date) -> list[str]:
+    """Use-it-or-lose-it: an FSA forfeits whatever is left at plan-year end.
+    Warn once inside `fsa_warn_days` of Dec 31 while it still holds money."""
+    out = []
+    end = fsa_year_end(as_of)
+    left = (end - as_of).days
+    for a in accounts:
+        if a.type == AccountType.FSA and a.active and a.balance > 0 and left <= cfg.projection.fsa_warn_days:
+            out.append(f"{a.display_name}: {a.balance / 100:,.2f} in FSA funds expire {end} ({left} days) — spend it")
+    return out
+
+
 def project(db: Database, cfg: Config, as_of: date | None = None) -> ProjectionResult:
     as_of = as_of or date.today()
     horizon = cfg.projection.horizon_days
@@ -153,6 +169,7 @@ def project(db: Database, cfg: Config, as_of: date | None = None) -> ProjectionR
             warnings.append(f"{a.display_name}: {a.sync_error}")
         elif a.balance_as_of and (as_of - a.balance_as_of.date()).days > cfg.projection.stale_after_days:
             warnings.append(f"{a.display_name}: balance is {(as_of - a.balance_as_of.date()).days} days old")
+    warnings += fsa_warnings(cfg, accounts, as_of)
 
     days: list[ProjectionDay] = []
     bal = starting

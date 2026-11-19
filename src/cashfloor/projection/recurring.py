@@ -150,6 +150,73 @@ def merge_truncated_names(groups: dict) -> dict:
     return merged
 
 
+def _regularity(dates: list[date]) -> tuple[float, float]:
+    """(fraction of gaps within 4 days of the median gap, median gap)."""
+    gaps = [(b - a).days for a, b in zip(dates, dates[1:], strict=False)]
+    if not gaps:
+        return 0.0, 0.0
+    med = statistics.median(gaps)
+    return sum(abs(g - med) <= 4 for g in gaps) / len(gaps), med
+
+
+def merge_income_series(groups: dict, tolerance: float = 0.10) -> tuple[dict, dict, dict]:
+    """Fold split paychecks back into one series.
+
+    The same employer can land under two payee keys (a one-cent change in the
+    net amount, a reworded descriptor), each looking like its own biweekly
+    series with holes exactly where the other one's hits are.  Two inflow
+    series on one account are merged when their amounts are within
+    `tolerance`, none of their dates collide, and the combined dates are at
+    least as regular as the bigger series alone — i.e. the small one fills
+    the gaps rather than adding noise.  The series with the most hits before
+    merging keeps its key and supplies the projected amount.
+
+    Returns (groups, merges, absorbed): merges maps a surviving key to
+    {"amount": dominant latest amount, "absorbed": [(pattern, count), ...]};
+    absorbed maps each removed key to the key it was folded into.
+    """
+    merges: dict[tuple, dict] = {}
+    absorbed: dict[tuple, tuple] = {}
+    original = {k: sorted(v, key=lambda t: t.posted) for k, v in groups.items()}
+    by_account: dict[int, list[tuple]] = defaultdict(list)
+    for key, txs in groups.items():
+        if key[2] > 0 and len(txs) >= 2:
+            by_account[key[0]].append(key)
+    for keys in by_account.values():
+        keys.sort(key=lambda k: -len(groups[k]))
+        for i, big in enumerate(keys):
+            if big in absorbed:
+                continue
+            progress = True
+            while progress:
+                progress = False
+                big_txs = sorted(groups[big], key=lambda t: t.posted)
+                big_dates = [t.posted for t in big_txs]
+                big_amt = statistics.median(abs(t.amount) for t in big_txs)
+                big_reg, big_med = _regularity(big_dates)
+                for small in keys[i + 1:]:
+                    if small in absorbed:
+                        continue
+                    small_txs = groups[small]
+                    small_amt = statistics.median(abs(t.amount) for t in small_txs)
+                    if abs(big_amt - small_amt) / max(big_amt, 1) > tolerance:
+                        continue
+                    if any(abs((a.posted - b.posted).days) < 3 for a in big_txs for b in small_txs):
+                        continue  # same-day hits are two things, not one
+                    reg, med = _regularity(sorted(big_dates + [t.posted for t in small_txs]))
+                    if reg < 0.8 or reg < big_reg or med > big_med:
+                        continue
+                    groups[big] = big_txs + list(small_txs)
+                    m = merges.setdefault(big, {"amount": abs(original[big][-1].amount), "absorbed": []})
+                    m["absorbed"].append((small[1], len(small_txs)))
+                    absorbed[small] = big
+                    progress = True
+                    break
+    for k in absorbed:
+        del groups[k]
+    return groups, merges, absorbed
+
+
 @dataclass
 class Candidate:
     account_id: int
@@ -187,7 +254,12 @@ def analyse_recurring(
         groups[key].append(t)
 
     groups = merge_truncated_names(groups)
+    counts = {k: len(v) for k, v in groups.items()}
+    groups, merges, absorbed = merge_income_series(groups, tolerance=rc.income_merge_tolerance)
     out: list[Candidate] = []
+    for small, big in absorbed.items():
+        out.append(Candidate(small[0], small[1], counts[small], None, None, 0,
+                             f"merged into {_title(big[1])!r} (same income source)"))
     for (account_id, pattern, _sign), g in groups.items():
         g.sort(key=lambda t: t.posted)
         dedup: list[Transaction] = []
@@ -253,6 +325,13 @@ def analyse_recurring(
         else:
             use_amt = int(latest_amt)
             note = ""
+        merged = merges.get((account_id, pattern, _sign))
+        if merged:
+            # Split paycheck folded back together: the series with the most hits
+            # before merging supplies the amount, and the merge is not "variable".
+            use_amt = int(merged["amount"])
+            variable = False
+            note = "same income source as " + ", ".join(f"{_title(p)} ({n})" for p, n in merged["absorbed"])
         if use_amt < 100:  # under $1: interest pennies, rounding — not a bill
             cand.verdict = "negligible amount"
             continue

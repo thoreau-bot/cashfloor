@@ -115,3 +115,55 @@ def test_five_years_with_irregularities_still_proposes():
     assert found["acme widgets inc"].frequency == Frequency.BIWEEKLY
     assert found["wa dol vehicle"].frequency == Frequency.SEMIANNUAL
     assert ins.confidence >= 0.8
+
+
+def test_split_paycheck_series_merge_into_one_income_source():
+    """36 biweekly paydays; 32 posted as $3,300.00 under one descriptor, 4 as
+    $3,299.99 under another.  Each alone is a biweekly series with holes; the
+    detector must see one paycheck, projected at the dominant amount."""
+    cfg = Config()
+    today = date(2026, 11, 19)
+    first = today - timedelta(days=14 * 36 + 3)
+    txs = []
+    odd = {5, 11, 20, 29}
+    for i in range(36):
+        d = first + timedelta(days=14 * i)
+        if i in odd:
+            txs.append(_tx(i, d, 329_999, "ACME WIDGETS INC DIR DEP", acct=1))
+        else:
+            txs.append(_tx(i, d, 330_000, "ACME WIDGETS PAYROLL", acct=1))
+    items = detect_recurring(cfg, txs, today=today)
+    pay = [i for i in items if i.amount > 0]
+    assert len(pay) == 1
+    assert pay[0].amount == 330_000 and pay[0].frequency == Frequency.BIWEEKLY
+    assert "same income source" in pay[0].notes
+    assert pay[0].next_date == first + timedelta(days=14 * 37)  # first payday after today
+
+
+def test_two_genuine_incomes_on_the_same_days_are_not_merged():
+    """Two employers paying biweekly on the same Fridays, amounts 5% apart:
+    the dates collide, so they stay separate."""
+    cfg = Config()
+    today = date(2026, 11, 19)
+    first = today - timedelta(days=14 * 12 + 3)
+    txs = []
+    for i in range(12):
+        d = first + timedelta(days=14 * i)
+        txs.append(_tx(i, d, 200_000, "ACME WIDGETS PAYROLL", acct=1))
+        txs.append(_tx(100 + i, d, 195_000, "FOURTH COFFEE PAYROLL", acct=1))
+    items = detect_recurring(cfg, txs, today=today)
+    assert sorted(i.amount for i in items if i.amount > 0) == [195_000, 200_000]
+
+
+def test_interleaved_but_dissimilar_amounts_are_not_merged():
+    """A weekly $500 side gig does fill the gaps of a biweekly $3,300 paycheck
+    date-wise, but 85% apart in amount is not the same income."""
+    cfg = Config()
+    today = date(2026, 11, 19)
+    first = today - timedelta(days=14 * 12 + 3)
+    txs = []
+    for i in range(12):
+        txs.append(_tx(i, first + timedelta(days=14 * i), 330_000, "ACME WIDGETS PAYROLL", acct=1))
+        txs.append(_tx(100 + i, first + timedelta(days=14 * i + 7), 50_000, "GIG PLATFORM PAYOUT", acct=1))
+    items = detect_recurring(cfg, txs, today=today)
+    assert sorted(i.amount for i in items if i.amount > 0) == [50_000, 330_000]

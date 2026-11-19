@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 from fastapi import FastAPI, Form, Request
@@ -14,7 +14,7 @@ from fastapi.templating import Jinja2Templates
 from .. import __version__, secrets
 from ..config import GUI_SETTINGS, Config, apply_overrides
 from ..db import Database
-from ..models import AccountType, Frequency, ItemSource, ScheduledItem, from_cents, to_cents
+from ..models import INVESTMENT_TYPES, AccountType, Frequency, ItemSource, ScheduledItem, from_cents, to_cents
 from ..projection.engine import project
 from ..sync import run_sync
 
@@ -109,7 +109,7 @@ def create_app(cfg: Config, with_scheduler: bool = False) -> FastAPI:
             pending = [i for i in d.list_items() if not i.confirmed]
             syncs = d.last_syncs(8)
             connections = d.list_connections()
-            holdings_total = sum(h.market_value or 0 for h in d.list_holdings())
+            invest_total = sum(a.balance for a in accounts if a.type in INVESTMENT_TYPES)
         finally:
             d.close()
         data = r.to_dict()
@@ -125,7 +125,7 @@ def create_app(cfg: Config, with_scheduler: bool = False) -> FastAPI:
         return templates.TemplateResponse(request, "dashboard.html", {
             "p": data, "chart": svg_chart(data["days"], data["safety_buffer"]), "accounts": accounts,
             "pending": pending, "upcoming": upcoming, "syncs": syncs, "cfg": c, "setup_hints": setup_hints,
-            "connections": connections, "holdings_total": holdings_total,
+            "connections": connections, "invest_total": invest_total,
         })
 
     @app.post("/sync")
@@ -156,6 +156,7 @@ def create_app(cfg: Config, with_scheduler: bool = False) -> FastAPI:
             "projection.estimate_future_card_payments": cfg.projection.estimate_future_card_payments,
             "recurring.min_occurrences": cfg.recurring.min_occurrences,
             "recurring.amount_tolerance": cfg.recurring.amount_tolerance,
+            "recurring.income_merge_tolerance": cfg.recurring.income_merge_tolerance,
             "scheduler.daily_sync_time": cfg.scheduler.daily_sync_time,
             "general.timezone": cfg.general.timezone,
             "simplefin.lookback_days": next((pc.lookback_days for pc in cfg.provider if pc.kind == "simplefin"), 60),
@@ -173,6 +174,7 @@ def create_app(cfg: Config, with_scheduler: bool = False) -> FastAPI:
             "projection.estimate_future_card_payments": c.projection.estimate_future_card_payments,
             "recurring.min_occurrences": c.recurring.min_occurrences,
             "recurring.amount_tolerance": c.recurring.amount_tolerance,
+            "recurring.income_merge_tolerance": c.recurring.income_merge_tolerance,
             "scheduler.daily_sync_time": c.scheduler.daily_sync_time,
             "general.timezone": c.general.timezone,
             "simplefin.lookback_days": next((pc.lookback_days for pc in c.provider if pc.kind == "simplefin"), 60),
@@ -403,15 +405,46 @@ def create_app(cfg: Config, with_scheduler: bool = False) -> FastAPI:
             "files": [f.name for f in files[:30]], "chosen": chosen.name if chosen else "", "body": body,
         })
 
-    @app.get("/holdings", response_class=HTMLResponse)
-    def holdings(request: Request):
+    @app.get("/holdings", include_in_schema=False)
+    def holdings_redirect():
+        return RedirectResponse("/investments", status_code=301)
+
+    @app.get("/investments", response_class=HTMLResponse)
+    def investments(request: Request):
+        from collections import namedtuple
+
+        from ..models import HEALTHCARE_TYPES
+        from ..projection.engine import fsa_year_end
+
         d = db()
         try:
-            rows = d.list_holdings()
-            accts = {a.id: a for a in d.list_accounts(active_only=False)}
+            c = effective(d)
+            accounts = [a for a in d.list_accounts(active_only=False) if a.active]
+            holdings = d.list_holdings()
         finally:
             d.close()
-        return templates.TemplateResponse(request, "holdings.html", {"holdings": rows, "accts": accts})
+        HV = namedtuple("HV", "value gain")
+        hv: dict[int, HV] = {}
+        for h in holdings:
+            cur = hv.get(h.account_id, HV(0, 0))
+            gain = cur.gain
+            if gain is not None and h.market_value is not None and h.cost_basis is not None:
+                gain += h.market_value - h.cost_basis
+            else:
+                gain = None
+            hv[h.account_id] = HV(cur.value + (h.market_value or 0), gain)
+        retirement = [a for a in accounts if a.type == AccountType.INVESTMENT]
+        healthcare = [a for a in accounts if a.type in HEALTHCARE_TYPES]
+        today = date.today()
+        year_end = fsa_year_end(today)
+        accts = {a.id: a for a in accounts}
+        return templates.TemplateResponse(request, "investments.html", {
+            "retirement": retirement, "healthcare": healthcare, "holdings": holdings, "accts": accts, "hv": hv,
+            "retirement_total": sum(a.balance for a in retirement),
+            "retirement_hold": sum(hv[a.id].value for a in retirement if a.id in hv),
+            "year_end": year_end, "days_left": (year_end - today).days, "warn_days": c.projection.fsa_warn_days,
+            "warn_from": year_end - timedelta(days=c.projection.fsa_warn_days),
+        })
 
     # ---- JSON API ----
     @app.get("/api/projection")

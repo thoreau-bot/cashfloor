@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block body %}
+<h2>Investments</h2>
+<p class="muted small">Money that isn't cash: retirement and brokerage accounts, and healthcare spending accounts. None of it is in the cash pool, so none of it moves the floor — but an FSA that still holds money near year end is a bill in reverse: spend it or lose it.</p>
+
+<h3 style="margin-top:18px">Retirement &amp; brokerage</h3>
+<div class="card">
+<table>
+  <tr><th>Institution / account</th><th>Type</th><th class="num">Balance</th><th class="num">Holdings value</th><th class="num">Unrealised gain</th><th>As of</th></tr>
+  {% for a in retirement %}
+  <tr>
+    <td>{{ a.institution }}<br><span class="small muted">{{ a.display_name }}{% if a.last4 %} ····{{ a.last4 }}{% endif %}</span></td>
+    <td>{{ a.type.value }}</td>
+    <td class="num">{{ a.balance | money }}</td>
+    <td class="num">{{ hv[a.id].value | money if a.id in hv else '' }}</td>
+    <td class="num {{ 'good' if a.id in hv and hv[a.id].gain >= 0 else 'bad' }}">{{ hv[a.id].gain | money if a.id in hv and hv[a.id].gain is not none else '' }}</td>
+    <td class="small muted">{{ a.balance_as_of.strftime('%Y-%m-%d') if a.balance_as_of else '' }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="6" class="muted">No retirement or brokerage accounts. Set an account's type to <em>investment</em> on the Accounts page to list it here.</td></tr>
+  {% endfor %}
+  {% if retirement %}<tr><th>Total</th><th></th><th class="num">{{ retirement_total | money }}</th><th class="num">{{ retirement_hold | money }}</th><th></th><th></th></tr>{% endif %}
+</table>
+</div>
+
+<h3 style="margin-top:18px">Healthcare spending accounts</h3>
+<p class="muted small">An <strong>HSA</strong> rolls over and may be invested — treat it like retirement money with a medical door. An <strong>FSA</strong> is use-it-or-lose-it: whatever is left on {{ year_end }} is forfeited, so its projected balance at year end is zero and the dashboard warns from {{ warn_from }} while it still holds money.</p>
+<div class="card">
+<table>
+  <tr><th>Institution / account</th><th>Type</th><th class="num">Balance</th><th class="num">Holdings value</th><th>Year end</th><th>As of</th></tr>
+  {% for a in healthcare %}
+  <tr>
+    <td>{{ a.institution }}<br><span class="small muted">{{ a.display_name }}{% if a.last4 %} ····{{ a.last4 }}{% endif %}</span></td>
+    <td>{{ a.type.value | upper }}</td>
+    <td class="num">{{ a.balance | money }}</td>
+    <td class="num">{{ hv[a.id].value | money if a.id in hv else '' }}</td>
+    <td>{% if a.type.value == 'fsa' %}{% if a.balance > 0 %}<span class="{{ 'warn' if days_left <= warn_days else 'muted' }}">forfeits {{ a.balance | money }} on {{ year_end }} ({{ days_left }} days)</span>{% else %}<span class="muted">nothing to forfeit</span>{% endif %}{% else %}<span class="muted">rolls over</span>{% endif %}</td>
+    <td class="small muted">{{ a.balance_as_of.strftime('%Y-%m-%d') if a.balance_as_of else '' }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="6" class="muted">No HSA or FSA accounts. Set an account's type to <em>hsa</em> or <em>fsa</em> on the Accounts page to list it here.</td></tr>
+  {% endfor %}
+</table>
+</div>
+
+<h3 style="margin-top:18px">Holdings</h3>
+<p class="muted small">As reported by the provider. Shares, cost basis and market value are the provider's figures.</p>
+<div class="card">
+<table>
+  <tr><th>Account</th><th>Symbol</th><th>Description</th><th class="num">Shares</th><th class="num">Cost basis</th><th class="num">Market value</th><th class="num">Gain</th><th>As of</th></tr>
+  {% for h in holdings %}
+  <tr>
+    <td>{{ accts[h.account_id].display_name if h.account_id in accts else '?' }}</td>
+    <td>{{ h.symbol or '' }}</td><td>{{ h.description }}</td>
+    <td class="num">{{ '%.3f' % (h.shares / 1000) if h.shares is not none else '' }}</td>
+    <td class="num">{{ h.cost_basis | money }}</td>
+    <td class="num">{{ h.market_value | money }}</td>
+    <td class="num {{ 'good' if (h.market_value or 0) >= (h.cost_basis or 0) else 'bad' }}">{% if h.market_value is not none and h.cost_basis is not none %}{{ (h.market_value - h.cost_basis) | money }}{% endif %}</td>
+    <td class="small muted">{{ h.as_of.strftime('%Y-%m-%d') if h.as_of else '' }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="8" class="muted">No holdings reported.</td></tr>
+  {% endfor %}
+</table>
+</div>
+{% endblock %}

@@ -20,8 +20,14 @@ class AccountType(StrEnum):
     CREDIT = "credit"
     LOAN = "loan"
     UTILITY = "utility"
-    INVESTMENT = "investment"
+    INVESTMENT = "investment"  # 401(k), IRA, brokerage
+    HSA = "hsa"  # health savings account: rolls over, may be invested
+    FSA = "fsa"  # flexible spending account: forfeits at plan-year end
     OTHER = "other"
+
+
+INVESTMENT_TYPES = (AccountType.INVESTMENT, AccountType.HSA, AccountType.FSA)
+HEALTHCARE_TYPES = (AccountType.HSA, AccountType.FSA)
 
 
 class ItemSource(StrEnum):

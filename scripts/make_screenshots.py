@@ -27,6 +27,7 @@ from cashfloor.models import (  # noqa: E402
     AccountType,
     Connection,
     Frequency,
+    Holding,
     ItemSource,
     ScheduledItem,
     Statement,
@@ -74,6 +75,21 @@ def seed(cfg: Config) -> None:
                                       institution="Proseware Bank", type=AccountType.CREDIT, balance=-41_275,
                                       balance_as_of=NOW, last_synced=NOW, conn_id="CONN-nw"))
     db.set_account_user_fields(card2.id, key="proseware", nickname="Proseware Rewards", last4="6610", pay_day=20)
+    # Investments tab: a 401(k) with holdings, an HSA, and an FSA that will forfeit at year end.
+    k401 = db.upsert_account(Account(id=None, provider="simplefin", external_id="ACT-5", name="401(K) SAVINGS PLAN",
+                                     institution="Tailspin Retirement Services", type=AccountType.INVESTMENT,
+                                     balance=8_742_315, balance_as_of=NOW, last_synced=NOW, conn_id="CONN-nw"))
+    db.set_account_user_fields(k401.id, key="401k", nickname="401(k)")
+    hsa = db.upsert_account(Account(id=None, provider="simplefin", external_id="ACT-6", name="HEALTH SAVINGS ACCOUNT",
+                                    institution="Tailspin Retirement Services", type=AccountType.HSA, balance=612_080,
+                                    balance_as_of=NOW, last_synced=NOW, conn_id="CONN-nw"))
+    db.set_account_user_fields(hsa.id, key="hsa", nickname="HSA")
+    db.add_manual_account(name="Health Care FSA", institution="Tailspin Retirement Services", type=AccountType.FSA,
+                          key="fsa", balance=41_250)
+    db.replace_holdings(k401.id, [
+        Holding(k401.id, "H-1", "TSPX", "Tailspin Total Market Index", 412_337_000, 5_120_000, None, 6_904_210, as_of=NOW),
+        Holding(k401.id, "H-2", "TSBX", "Tailspin Bond Index", 182_040_000, 1_700_000, None, 1_838_105, as_of=NOW),
+    ])
     # An account no provider supplies, kept by hand.
     db.add_manual_account(name="Homeowners Policy", institution="Woodgrove Mutual", type=AccountType.UTILITY,
                           key="home-ins", last4="3382", statement_balance=48_900, due_date=TODAY + timedelta(days=40))

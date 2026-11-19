@@ -172,3 +172,65 @@ def test_web_flows(tmp_path, monkeypatch):
         assert "projection.assume_card_payoff" in page
     finally:
         db.close()
+
+
+def test_hsa_fsa_guess_and_retype_migration(tmp_path):
+    from decimal import Decimal
+
+    from cashfloor.providers.simplefin import guess_account_type
+
+    assert guess_account_type("FIDELITY HSA", Decimal("1200")) == AccountType.HSA
+    assert guess_account_type("Health Savings Account", Decimal("1200"), has_holdings=True) == AccountType.HSA
+    assert guess_account_type("Flexible Spending Account", Decimal("300")) == AccountType.FSA
+    assert guess_account_type("401(K) PLAN", Decimal("90000"), has_holdings=True) == AccountType.INVESTMENT
+    # Accounts that were guessed 'investment' before 0.2.0 are re-typed once from their name.
+    db = _db(tmp_path)
+    old = db.upsert_account(Account(id=None, provider="simplefin", external_id="h1", name="FIDELITY HSA",
+                                    institution="Fidelity", type=AccountType.INVESTMENT, balance=1200_00,
+                                    balance_as_of=datetime.now(), last_synced=datetime.now()))
+    db.conn.execute("DELETE FROM meta WHERE key='migrated:retype_hsa_fsa'")
+    db.conn.commit()
+    db.migrate()
+    assert db.get_account(old.id).type == AccountType.HSA
+
+
+def test_fsa_year_end_warning(tmp_path):
+    from cashfloor.projection.engine import fsa_warnings
+
+    cfg = _cfg()
+    fsa = Account(id=1, provider="manual", external_id="f", name="Health FSA", institution="Fabrikam Benefits",
+                  type=AccountType.FSA, balance=412_50, balance_as_of=datetime.now(), last_synced=datetime.now())
+    assert fsa_warnings(cfg, [fsa], date(2026, 9, 1)) == []  # more than 61 days out
+    w = fsa_warnings(cfg, [fsa], date(2026, 11, 19))
+    assert len(w) == 1 and "412.50" in w[0] and "2026-12-31" in w[0] and "42 days" in w[0]
+    fsa.balance = 0
+    assert fsa_warnings(cfg, [fsa], date(2026, 12, 1)) == []
+    # and it surfaces through project() like the other warnings
+    db = _db(tmp_path)
+    _checking(db)
+    db.add_manual_account(name="Health FSA", institution="Fabrikam Benefits", type=AccountType.FSA, balance=90_00)
+    res = project(db, cfg, as_of=date(2026, 12, 1))
+    assert any("FSA funds expire" in w for w in res.warnings)
+
+
+def test_investments_page(tmp_path):
+    from fastapi.testclient import TestClient
+
+    from cashfloor.web.app import create_app
+
+    cfg = Config()
+    cfg.general.data_dir = tmp_path / "data"
+    cfg.general.archive_dir = tmp_path / "statements"
+    cfg.general.inbox_dir = tmp_path / "inbox"
+    cfg.ensure_dirs()
+    db = Database(cfg.db_path)
+    db.upsert_account(Account(id=None, provider="simplefin", external_id="k", name="401(K) PLAN", institution="Fidelity",
+                              type=AccountType.INVESTMENT, balance=90_000_00, balance_as_of=datetime.now(),
+                              last_synced=datetime.now()))
+    db.add_manual_account(name="Health FSA", institution="Fabrikam Benefits", type=AccountType.FSA, balance=412_50)
+    db.close()
+    client = TestClient(create_app(cfg))
+    page = client.get("/investments").text
+    assert "401(K) PLAN" in page and "90,000.00" in page
+    assert "forfeits 412.50" in page
+    assert client.get("/holdings", follow_redirects=False).status_code == 301

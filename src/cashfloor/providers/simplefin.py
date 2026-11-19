@@ -19,6 +19,7 @@ not part of the protocol.
 from __future__ import annotations
 
 import base64
+import re
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
@@ -64,7 +65,11 @@ def claim_access_url(setup_token: str, timeout: float = 30.0) -> str:
 
 def guess_account_type(name: str, balance: Decimal, has_holdings: bool = False) -> AccountType:
     n = name.lower()
-    if has_holdings or any(k in n for k in ("401", "ira", "brokerage", "invest", "roth", "hsa")):
+    if re.search(r"\bfsa\b|flexible spending|flex spending|dependent care", n):
+        return AccountType.FSA
+    if re.search(r"\bhsa\b|health savings", n):
+        return AccountType.HSA
+    if has_holdings or any(k in n for k in ("401", "ira", "brokerage", "invest", "roth", "403", "457", "tsp")):
         return AccountType.INVESTMENT
     if any(k in n for k in ("credit", "card", "visa", "mastercard", "amex", "discover")):
         return AccountType.CREDIT
