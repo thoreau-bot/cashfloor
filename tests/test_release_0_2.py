@@ -317,3 +317,24 @@ def test_already_posted_matches_statement_alias_and_exact_amount(tmp_path):
     pend = Transaction(None, 7, "z", today, 3193_00, "ACME WIDGETS PAYROLL", pending=True)
     assert not already_posted(cfg, it, today, today, [pend])
     assert already_posted(cfg, it, today, today, [pend], None, {7})
+
+
+def test_inflow_due_today_without_posting_is_assumed_landed(tmp_path):
+    """Kendall's case: the bank's balance already includes this morning's
+    payroll but SimpleFIN hasn't listed the transaction yet.  Inflows due on
+    or before the balance date are taken as in the balance; outflows are not."""
+    db = _db(tmp_path)
+    today = date(2026, 11, 19)
+    chk = _checking(db, bal=5864_79)  # balance_as_of = now (today)
+    db.save_item(ScheduledItem(id=None, name="Payroll", account_id=chk.id, amount=3193_00, frequency=Frequency.BIWEEKLY,
+                               next_date=today, source=ItemSource.DETECTED, confirmed=True, payee_pattern="acme"))
+    db.save_item(ScheduledItem(id=None, name="Car loan via Zelle", account_id=chk.id, amount=-675_00,
+                               frequency=Frequency.MONTHLY, next_date=today, source=ItemSource.DETECTED, confirmed=True,
+                               payee_pattern="zelle transfer to"))
+    res = project(db, _cfg(), as_of=date.today() if date.today() == today else today)
+    day0 = res.days[0]
+    assert all("Payroll" not in e for e in day0.events)
+    assert any("Car loan" in e for e in day0.events)
+    # switched off: payroll is counted again
+    res = project(db, _cfg(assume_inflows_landed=False), as_of=today)
+    assert any("Payroll" in e for e in res.days[0].events)

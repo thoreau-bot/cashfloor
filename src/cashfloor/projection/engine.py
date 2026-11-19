@@ -71,11 +71,20 @@ def already_posted(
     recent: list[Transaction],
     aliases: dict[tuple[int, str], str] | None = None,
     pending_in_balance: set[int] | None = None,
+    balance_as_of: date | None = None,
 ) -> bool:
-    """True when a transaction matching this item's next occurrence has already
-    hit the account: the balance includes it, so the projection must not add it
-    again.  Checked only for the first few days of the horizon — today's payroll
-    that posted this morning, a bill drafted a day early.
+    """True when this item's next occurrence is already inside the account
+    balance, so the projection must not add it again.  Two ways to know:
+
+    * a matching transaction has posted (rules below), or
+    * the occurrence is an inflow due on or before the day the balance was
+      fetched and `assume_inflows_landed` is on.  Payroll lands overnight and
+      the bank reports the new balance immediately, but the transaction itself
+      often isn't listed until hours or a day later — without this rule today's
+      paycheck is counted twice until it shows up.  Outflows get no such
+      assumption: a bill that hasn't posted is still counted, which errs low.
+
+    Checked only for the first few days of the horizon.
 
     A posting counts when it is on the item's account, in the same direction,
     within POSTED_LOOKBACK days before the due date (up to as_of), and either
@@ -88,6 +97,9 @@ def already_posted(
     them (available balance in use)."""
     if (occ - as_of).days > POSTED_LOOKAHEAD:
         return False
+    if (it.amount > 0 and cfg.projection.assume_inflows_landed and balance_as_of is not None
+            and occ <= as_of and balance_as_of >= occ):
+        return True
     aliases = aliases or {}
     pending_ok = pending_in_balance or set()
     tol = cfg.recurring.amount_tolerance
@@ -125,6 +137,7 @@ def build_events(
     `recent_txs` (the last week or so of postings) lets an occurrence that has
     already hit the account be skipped instead of counted twice."""
     recent = recent_txs or []
+    acct_by_id = {a.id: a for a in accounts}
     pool = pool_accounts(cfg, accounts)
     pending_in_balance = (
         {a.id for a in pool if a.available is not None} if cfg.projection.use_available_balance else set()
@@ -151,7 +164,9 @@ def build_events(
             continue  # nothing to do with the pool
         sign = 1 if src_in else -1  # money leaving `account_id` enters the counter account
         for d in occurrences(it, as_of, horizon_end):
-            if recent and already_posted(cfg, it, d, as_of, recent, aliases, pending_in_balance):
+            acct = acct_by_id.get(it.account_id)
+            bal_day = acct.balance_as_of.date() if acct and acct.balance_as_of else None
+            if already_posted(cfg, it, d, as_of, recent, aliases, pending_in_balance, bal_day):
                 continue  # already in the balance
             _event(events, d, sign * it.amount, it.name)
 

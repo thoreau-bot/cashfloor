@@ -85,6 +85,12 @@
     <td class="small muted">{{ base['projection.default_card_pay_day'] }}</td>
   </tr>
   <tr>
+    <td>Inflows due today already landed</td>
+    <td><input type="checkbox" name="projection.assume_inflows_landed" value="true" {{ 'checked' if current['projection.assume_inflows_landed'] }}></td>
+    <td class="small muted">{{ help['projection.assume_inflows_landed'] }}</td>
+    <td class="small muted">{{ base['projection.assume_inflows_landed'] }}</td>
+  </tr>
+  <tr>
     <td>Stale after (days)</td>
     <td><input name="projection.stale_after_days" value="{{ current['projection.stale_after_days'] }}" size="4"></td>
     <td class="small muted">{{ help['projection.stale_after_days'] }}</td>

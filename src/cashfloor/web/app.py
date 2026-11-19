@@ -175,6 +175,7 @@ def create_app(cfg: Config, with_scheduler: bool = False) -> FastAPI:
             "general.keep_raw_responses": cfg.general.keep_raw_responses,
             "projection.assume_card_payoff": cfg.projection.assume_card_payoff,
             "projection.default_card_pay_day": cfg.projection.default_card_pay_day,
+            "projection.assume_inflows_landed": cfg.projection.assume_inflows_landed,
         }
         current = {
             "projection.horizon_days": c.projection.horizon_days,
@@ -193,6 +194,7 @@ def create_app(cfg: Config, with_scheduler: bool = False) -> FastAPI:
             "general.keep_raw_responses": c.general.keep_raw_responses,
             "projection.assume_card_payoff": c.projection.assume_card_payoff,
             "projection.default_card_pay_day": c.projection.default_card_pay_day,
+            "projection.assume_inflows_landed": c.projection.assume_inflows_landed,
         }
         raw_dir = cfg.general.data_dir / "raw"
         raw_files = sorted(raw_dir.glob("*.json"), reverse=True)[:10] if raw_dir.exists() else []
@@ -209,7 +211,8 @@ def create_app(cfg: Config, with_scheduler: bool = False) -> FastAPI:
         d = db()
         try:
             checkboxes = {"projection.estimate_future_card_payments", "projection.use_available_balance",
-                          "general.keep_raw_responses", "projection.assume_card_payoff"}
+                          "general.keep_raw_responses", "projection.assume_card_payoff",
+                          "projection.assume_inflows_landed"}
             for key in GUI_SETTINGS:
                 if key in checkboxes:
                     val = "true" if form.get(key) else "false"

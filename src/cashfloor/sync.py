@@ -140,9 +140,12 @@ def run_sync(cfg: Config, db: Database, only: str | None = None, today: date | N
     # genuinely next date.
     recent = db.list_transactions(since=today - timedelta(days=POSTED_LOOKBACK + POSTED_LOOKAHEAD))
     aliases = db.get_payee_aliases()
+    acct_by_id = {a.id: a for a in db.list_accounts(active_only=False)}
     for it in db.list_items():
         nd = advance_past(it, today)
-        if it.frequency != Frequency.ONCE and already_posted(cfg, it, nd, today, recent, aliases):
+        acct = acct_by_id.get(it.account_id)
+        bal_day = acct.balance_as_of.date() if acct and acct.balance_as_of else None
+        if it.frequency != Frequency.ONCE and already_posted(cfg, it, nd, today, recent, aliases, None, bal_day):
             nd = advance_past(it, nd + timedelta(days=1))
         if nd != it.next_date:
             it.next_date = nd

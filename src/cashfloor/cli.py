@@ -283,6 +283,7 @@ def items_due(redact: bool = typer.Option(False, help="Mask every payee/item nam
         pend_ok = {a.id for a in accts.values() if a.available is not None} if cfg.projection.use_available_balance else set()
         rprint(f"today {today} · lookahead {POSTED_LOOKAHEAD}d · lookback {POSTED_LOOKBACK}d · "
                f"use_available_balance={cfg.projection.use_available_balance} · "
+               f"assume_inflows_landed={cfg.projection.assume_inflows_landed} · "
                f"accounts with available balance: {sorted(pend_ok)} · recent postings: {len(recent)}")
         show = _mask if redact else (lambda t: repr(t))
         for it in db.list_items():
@@ -291,10 +292,12 @@ def items_due(redact: bool = typer.Option(False, help="Mask every payee/item nam
             nd = advance_past(it, today)
             if (nd - today).days > POSTED_LOOKAHEAD:
                 continue
-            hit = already_posted(cfg, it, nd, today, recent, aliases, pend_ok)
             a = accts.get(it.account_id)
+            bal_day = a.balance_as_of.date() if a and a.balance_as_of else None
+            hit = already_posted(cfg, it, nd, today, recent, aliases, pend_ok, bal_day)
             rprint(f"[bold]item #{it.id}[/bold] {show(it.name)}  {from_cents(it.amount):+,.2f}  due {nd}  "
-                   f"acct #{it.account_id} ({a.type.value if a else '?'}, available={'yes' if a and a.available is not None else 'no'})  "
+                   f"acct #{it.account_id} ({a.type.value if a else '?'}, available={'yes' if a and a.available is not None else 'no'}, "
+                   f"balance as of {bal_day})  "
                    f"pattern={show(it.payee_pattern)}  -> "
                    + ("[green]already posted, skipped[/green]" if hit else "[yellow]not matched, will be counted[/yellow]"))
             for t in recent:
