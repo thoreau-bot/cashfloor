@@ -11,12 +11,13 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from .config import Config
 from .db import Database
-from .models import AccountType, ItemSource
+from .models import AccountType, Frequency, ItemSource
+from .projection.engine import POSTED_LOOKAHEAD, POSTED_LOOKBACK, already_posted
 from .projection.recurrence import advance_past
 from .projection.recurring import analyse_recurring
 from .providers import build_provider
@@ -134,9 +135,14 @@ def run_sync(cfg: Config, db: Database, only: str | None = None, today: date | N
 
     apply_account_overrides(cfg, db)
 
-    # Roll scheduled dates forward past today.
+    # Roll scheduled dates forward past today — and past an occurrence that has
+    # already posted (this morning's payroll), so the Scheduled page shows the
+    # genuinely next date.
+    recent = db.list_transactions(since=today - timedelta(days=POSTED_LOOKBACK + POSTED_LOOKAHEAD))
     for it in db.list_items():
         nd = advance_past(it, today)
+        if it.frequency != Frequency.ONCE and already_posted(cfg, it, nd, today, recent):
+            nd = advance_past(it, nd + timedelta(days=1))
         if nd != it.next_date:
             it.next_date = nd
             db.save_item(it)

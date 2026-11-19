@@ -16,6 +16,7 @@ Projection accuracy: no more double-counted card payments, no more silently igno
 - **Manual accounts**: add an account no provider supplies (insurance, a utility, a card the Bridge can't see) from the bottom of the Accounts page or with `cashfloor accounts add`. You maintain its balance and due figures by hand; sync never touches it.
 
 **Fixed**
+- A scheduled item whose occurrence had already posted (this morning's payroll, a bill drafted a day early) was added to the projection on top of a balance that already included it. An occurrence due within 3 days is now skipped when a matching posting (same account, sign, amount within tolerance, payee when known) landed in the last 4 days, and sync rolls the item's next date past it.
 - Saving an Accounts row with a four-figure statement balance or minimum (shown as `1,234.56`) failed; amounts typed with commas, `$` or parentheses are now accepted everywhere.
 
 **Upgrading**

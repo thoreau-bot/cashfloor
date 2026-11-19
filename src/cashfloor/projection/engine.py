@@ -39,9 +39,11 @@ from ..models import (
     ProjectionDay,
     ProjectionResult,
     ScheduledItem,
+    Transaction,
     to_cents,
 )
 from .recurrence import occurrences
+from .recurring import normalize_payee
 
 DUE_TYPES = (AccountType.CREDIT, AccountType.LOAN, AccountType.UTILITY)
 
@@ -57,14 +59,46 @@ def _event(events: dict[date, list[tuple[int, str]]], d: date, amount: int, labe
     events[d].append((amount, label))
 
 
+POSTED_LOOKAHEAD = 3  # an occurrence due within this many days may already have posted
+POSTED_LOOKBACK = 4  # ...and the posting may sit this many days before the due date (early payday)
+
+
+def already_posted(cfg: Config, it: ScheduledItem, occ: date, as_of: date, recent: list[Transaction]) -> bool:
+    """True when a transaction matching this item's next occurrence has already
+    hit the account: the balance includes it, so the projection must not add it
+    again.  Checked only for the first few days of the horizon — today's payroll
+    that posted this morning, a bill drafted a day early."""
+    if (occ - as_of).days > POSTED_LOOKAHEAD:
+        return False
+    tol = cfg.recurring.amount_tolerance
+    pat = it.payee_pattern
+    for t in recent:
+        if t.account_id != it.account_id or t.pending:
+            continue
+        if not (occ - timedelta(days=POSTED_LOOKBACK) <= t.posted <= as_of):
+            continue
+        if (t.amount > 0) != (it.amount > 0):
+            continue
+        if abs(abs(t.amount) - abs(it.amount)) > max(100, tol * abs(it.amount)):
+            continue
+        if pat and normalize_payee(t.payee or t.memo) != pat and not normalize_payee(t.payee or t.memo).startswith(pat):
+            continue
+        return True
+    return False
+
+
 def build_events(
     cfg: Config,
     accounts: list[Account],
     items: list[ScheduledItem],
     as_of: date,
     horizon_end: date,
+    recent_txs: list[Transaction] | None = None,
 ) -> tuple[dict[date, list[tuple[int, str]]], int]:
-    """Return {date: [(amount_cents, label), ...]} and count of unconfirmed items."""
+    """Return {date: [(amount_cents, label), ...]} and count of unconfirmed items.
+    `recent_txs` (the last week or so of postings) lets an occurrence that has
+    already hit the account be skipped instead of counted twice."""
+    recent = recent_txs or []
     pool = pool_accounts(cfg, accounts)
     pool_ids = {a.id for a in pool}
     events: dict[date, list[tuple[int, str]]] = defaultdict(list)
@@ -88,6 +122,8 @@ def build_events(
             continue  # nothing to do with the pool
         sign = 1 if src_in else -1  # money leaving `account_id` enters the counter account
         for d in occurrences(it, as_of, horizon_end):
+            if recent and already_posted(cfg, it, d, as_of, recent):
+                continue  # already in the balance
             _event(events, d, sign * it.amount, it.name)
 
     pay_from = (
@@ -162,7 +198,8 @@ def project(db: Database, cfg: Config, as_of: date | None = None) -> ProjectionR
     items = db.list_items()
     pool = pool_accounts(cfg, accounts)
     starting = sum((a.spendable if cfg.projection.use_available_balance else a.balance) for a in pool)
-    events, unconfirmed = build_events(cfg, accounts, items, as_of, horizon_end)
+    recent = db.list_transactions(since=as_of - timedelta(days=POSTED_LOOKBACK + POSTED_LOOKAHEAD))
+    events, unconfirmed = build_events(cfg, accounts, items, as_of, horizon_end, recent)
     warnings: list[str] = []
     for a in pool:
         if a.sync_error:

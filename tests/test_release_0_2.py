@@ -1,6 +1,6 @@
 """0.2.0: pays-account links, assumed card payoff, manual accounts, amount parsing."""
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from cashfloor.config import Config
 from cashfloor.db import Database
@@ -234,3 +234,64 @@ def test_investments_page(tmp_path):
     assert "401(K) PLAN" in page and "90,000.00" in page
     assert "forfeits 412.50" in page
     assert client.get("/holdings", follow_redirects=False).status_code == 301
+
+
+def test_occurrence_that_already_posted_is_not_counted_again(tmp_path):
+    """Payroll posted this morning; the balance includes it; the item's next
+    date is today.  Day 0 must not add it a second time, and the following
+    payday must still count."""
+    from cashfloor.models import Transaction
+
+    db = _db(tmp_path)
+    today = date(2026, 11, 19)
+    chk = _checking(db, bal=5864_79)
+    db.upsert_transactions([Transaction(None, chk.id, "p1", today, 3193_00, "ACME WIDGETS PAYROLL")])
+    db.save_item(ScheduledItem(id=None, name="Acme Widgets Payroll", account_id=chk.id, amount=3193_00,
+                               frequency=Frequency.BIWEEKLY, next_date=today, source=ItemSource.DETECTED,
+                               confirmed=True, payee_pattern="acme widgets payroll"))
+    res = project(db, _cfg(), as_of=today)
+    by_day = {d.day: d for d in res.days}
+    assert by_day[today].balance == 5864_79 and by_day[today].events == []
+    assert by_day[today + timedelta(days=14)].balance == 5864_79 + 3193_00
+
+
+def test_early_posting_and_unrelated_posting(tmp_path):
+    from cashfloor.models import Transaction
+
+    db = _db(tmp_path)
+    today = date(2026, 11, 19)
+    chk = _checking(db, bal=1000_00)
+    # rent drafted a day early (yesterday) for a due date of tomorrow -> skip
+    db.upsert_transactions([Transaction(None, chk.id, "r1", today - timedelta(days=1), -600_00, "TAILSPIN PROPERTY")])
+    db.save_item(ScheduledItem(id=None, name="Rent", account_id=chk.id, amount=-600_00, frequency=Frequency.MONTHLY,
+                               next_date=today + timedelta(days=1), source=ItemSource.MANUAL, confirmed=True))
+    # a same-amount posting today does NOT cancel a bill due in ten days
+    db.upsert_transactions([Transaction(None, chk.id, "g1", today, -89_99, "GROCERY MART")])
+    db.save_item(ScheduledItem(id=None, name="Internet", account_id=chk.id, amount=-89_99, frequency=Frequency.MONTHLY,
+                               next_date=today + timedelta(days=10), source=ItemSource.MANUAL, confirmed=True))
+    res = project(db, _cfg(), as_of=today)
+    by_day = {d.day: d for d in res.days}
+    assert by_day[today + timedelta(days=1)].events == []
+    assert by_day[today + timedelta(days=10)].events == ["Internet: -89.99"] or \
+        any("Internet" in e for e in by_day[today + timedelta(days=10)].events)
+
+
+def test_sync_roll_skips_posted_occurrence(tmp_path):
+    from cashfloor.models import Transaction
+    from cashfloor.sync import run_sync
+
+    cfg = _cfg()
+    cfg.general.data_dir = tmp_path / "data"
+    cfg.general.archive_dir = tmp_path / "statements"
+    cfg.general.inbox_dir = tmp_path / "inbox"
+    cfg.provider = []
+    cfg.ensure_dirs()
+    db = Database(cfg.db_path)
+    today = date(2026, 11, 19)
+    chk = _checking(db)
+    db.upsert_transactions([Transaction(None, chk.id, "p1", today, 3193_00, "ACME WIDGETS PAYROLL")])
+    it = db.save_item(ScheduledItem(id=None, name="Acme Widgets Payroll", account_id=chk.id, amount=3193_00,
+                                    frequency=Frequency.BIWEEKLY, next_date=today, source=ItemSource.DETECTED,
+                                    confirmed=True, payee_pattern="acme widgets payroll"))
+    run_sync(cfg, db, today=today)
+    assert db.get_item(it.id).next_date == today + timedelta(days=14)
