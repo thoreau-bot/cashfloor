@@ -52,6 +52,7 @@
   <a href="/statements" class="{{ 'active' if request.url.path.startswith('/statements') else '' }}">Statements</a>
   <a href="/settings" class="{{ 'active' if request.url.path.startswith('/settings') else '' }}">Settings</a>
   <span style="flex:1"></span>
+  <span class="small muted" title="installed version">v{{ asset_v }}</span>
   <form method="post" action="/sync" class="inline"><button>Sync Now</button></form>
 </header>
 <main>{% block body %}{% endblock %}</main>

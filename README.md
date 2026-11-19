@@ -78,12 +78,14 @@ Scheduler entry that launches `cashfloor serve`.
 
 ## Updating
 
-Download the latest release zip from GitHub, unpack it over your
-install folder (your `config.toml`, `data/`, `statements/` and `.venv` are
-never in the zip, so they survive), then run `scripts\setup.bat` /
-`scripts/setup.sh` once to pick up any new dependencies and migrate the
-database. Restart `serve` afterwards. The changelog says if a version
-needs anything else.
+Close the dashboard window, drop the release zip (`cashfloor-<version>.zip`)
+into your install folder, and run `scripts\update.bat` (Windows) or
+`scripts/update.sh`. It unpacks the zip over the install — your
+`config.toml`, `data/`, `statements/`, `inbox/` and `.venv` are never
+touched — installs any new dependencies, and prints the version. Start
+`serve` again; the database migrates itself on first start, and the
+installed version shows top-right in the dashboard. The changelog says if
+a version needs anything else.
 
 ## The model
 
