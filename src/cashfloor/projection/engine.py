@@ -36,6 +36,8 @@ from ..db import Database
 from ..models import (
     Account,
     AccountType,
+    Frequency,
+    ProjectedEvent,
     ProjectionDay,
     ProjectionResult,
     ScheduledItem,
@@ -55,8 +57,42 @@ def pool_accounts(cfg: Config, accounts: list[Account]) -> list[Account]:
     return [a for a in accounts if a.active and a.type.value in cfg.projection.pool_account_types]
 
 
-def _event(events: dict[date, list[tuple[int, str]]], d: date, amount: int, label: str) -> None:
-    events[d].append((amount, label))
+Events = dict[date, list[ProjectedEvent]]
+
+
+def _event(events: Events, d: date, amount: int, label: str, kind: str = "item", ref_id: int | None = None) -> None:
+    events[d].append(ProjectedEvent(amount, label, kind, ref_id))
+
+
+def paid_key(kind: str, ref_id: int, d: date) -> str:
+    """meta key recording that the user marked this occurrence paid by hand."""
+    return f"paid:{kind}:{ref_id}:{d.isoformat()}"
+
+
+def mark_occurrence_paid(db: Database, kind: str, ref_id: int, d: date, undo: bool = False) -> None:
+    """Record (or forget) that the user paid a projected outflow by hand.  The
+    engine drops that one occurrence; a scheduled item also rolls its next
+    date forward so the Scheduled page agrees (undo rolls it back to `d`)."""
+    from .recurrence import advance_past
+
+    db.set_meta(paid_key(kind, ref_id, d), None if undo else "1")
+    if kind != "item":
+        return
+    it = db.get_item(ref_id)
+    if it is None:
+        return
+    if undo:
+        if it.next_date > d:
+            it.next_date = d
+            if not it.active and it.frequency == Frequency.ONCE:
+                it.active = True
+        db.save_item(it)
+        return
+    if it.frequency == Frequency.ONCE:
+        it.active = False
+    elif it.next_date <= d:
+        it.next_date = advance_past(it, d + timedelta(days=1))
+    db.save_item(it)
 
 
 POSTED_LOOKAHEAD = 3  # an occurrence due within this many days may already have posted
@@ -132,7 +168,7 @@ def build_events(
     horizon_end: date,
     recent_txs: list[Transaction] | None = None,
     aliases: dict[tuple[int, str], str] | None = None,
-) -> tuple[dict[date, list[tuple[int, str]]], int]:
+) -> tuple[Events, int]:
     """Return {date: [(amount_cents, label), ...]} and count of unconfirmed items.
     `recent_txs` (the last week or so of postings) lets an occurrence that has
     already hit the account be skipped instead of counted twice."""
@@ -143,7 +179,7 @@ def build_events(
         {a.id for a in pool if a.available is not None} if cfg.projection.use_available_balance else set()
     )
     pool_ids = {a.id for a in pool}
-    events: dict[date, list[tuple[int, str]]] = defaultdict(list)
+    events: Events = defaultdict(list)
     unconfirmed = 0
     # accounts that already have an explicit payment item -> skip auto due events
     covered_counter_ids: set[int] = set()
@@ -168,7 +204,7 @@ def build_events(
             bal_day = acct.balance_as_of.date() if acct and acct.balance_as_of else None
             if already_posted(cfg, it, d, as_of, recent, aliases, pending_in_balance, bal_day):
                 continue  # already in the balance
-            _event(events, d, sign * it.amount, it.name)
+            _event(events, d, sign * it.amount, it.name, "item", it.id)
 
     pay_from = (
         next((a for a in pool if a.key == cfg.projection.default_payment_account), None)
@@ -193,7 +229,7 @@ def build_events(
                 guard = 0
                 while d <= horizon_end and guard < 24:
                     guard += 1
-                    _event(events, d, -owed, f"{a.display_name} payment (assumed payoff)")
+                    _event(events, d, -owed, f"{a.display_name} payment (assumed payoff)", "account", a.id)
                     if not cfg.projection.estimate_future_card_payments:
                         break
                     d = d + relativedelta(months=1)
@@ -210,7 +246,7 @@ def build_events(
                 guard += 1
                 if d >= as_of:
                     label = f"{a.display_name} payment" + ("" if first else " (est.)")
-                    _event(events, d, -amt, label)
+                    _event(events, d, -amt, label, "account", a.id)
                 if not cfg.projection.estimate_future_card_payments:
                     break
                 first = False
@@ -255,14 +291,18 @@ def project(db: Database, cfg: Config, as_of: date | None = None) -> ProjectionR
     days: list[ProjectionDay] = []
     bal = starting
     floor, floor_date = starting, as_of
+    paid = {k for k in db.get_settings_prefix("paid:")}
     d = as_of
     while d <= horizon_end:
-        todays = events.get(d, [])
-        inflow = sum(a for a, _ in todays if a > 0)
-        outflow = sum(a for a, _ in todays if a < 0)
+        todays = [e for e in events.get(d, [])
+                  if not (e.ref_id is not None and paid_key(e.kind, e.ref_id, d) in paid)]
+        for e in todays:
+            e.payable = e.amount < 0 and e.ref_id is not None and (d - as_of).days <= POSTED_LOOKAHEAD
+        inflow = sum(e.amount for e in todays if e.amount > 0)
+        outflow = sum(e.amount for e in todays if e.amount < 0)
         bal += inflow + outflow
         days.append(ProjectionDay(day=d, balance=bal, inflows=inflow, outflows=outflow,
-                                  events=[f"{lbl}: {amt/100:+,.2f}" for amt, lbl in todays]))
+                                  events=[e.text for e in todays], detail=todays))
         if bal < floor:
             floor, floor_date = bal, d
         d += timedelta(days=1)

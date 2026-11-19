@@ -264,6 +264,21 @@ def _mask(text: str | None) -> str:
     return f"{t[:2]}…({len(t.split())}w #{hashlib.sha1(t.lower().encode()).hexdigest()[:4]})"
 
 
+@items_app.command("paid")
+def items_paid(item_id: int, day: str | None = typer.Argument(None, help="Occurrence date, default today"),
+               undo: bool = typer.Option(False)) -> None:
+    """Mark a scheduled item's occurrence as paid by hand (dropped from the
+    projection; the item rolls to its next date).  Same as the dashboard's Paid button."""
+    from .projection.engine import mark_occurrence_paid
+
+    db = _db()
+    try:
+        mark_occurrence_paid(db, "item", item_id, date.fromisoformat(day) if day else date.today(), undo=undo)
+    finally:
+        db.close()
+    rprint("[green]undone[/green]" if undo else "[green]marked paid[/green]")
+
+
 @items_app.command("due")
 def items_due(redact: bool = typer.Option(False, help="Mask every payee/item name (safe to paste)")) -> None:
     """Items due in the next few days, with the recent postings on their account

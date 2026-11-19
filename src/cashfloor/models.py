@@ -210,12 +210,27 @@ class Statement:
 
 
 @dataclass
+@dataclass
+class ProjectedEvent:
+    amount: int  # cents, signed
+    label: str
+    kind: str  # "item" | "account"
+    ref_id: int | None  # scheduled item id or account id
+    payable: bool = False  # outflow due soon enough to be marked paid by hand
+
+    @property
+    def text(self) -> str:
+        return f"{self.label}: {self.amount/100:+,.2f}"
+
+
+@dataclass
 class ProjectionDay:
     day: date
     balance: int  # cents, pool total at end of day
     inflows: int
     outflows: int
     events: list[str] = field(default_factory=list)
+    detail: list[ProjectedEvent] = field(default_factory=list)
 
 
 @dataclass
@@ -249,6 +264,11 @@ class ProjectionResult:
                     "inflows": from_cents(d.inflows),
                     "outflows": from_cents(d.outflows),
                     "events": d.events,
+                    "detail": [
+                        {"amount": from_cents(e.amount), "label": e.label, "kind": e.kind, "id": e.ref_id,
+                         "payable": e.payable}
+                        for e in d.detail
+                    ],
                 }
                 for d in self.days
             ],

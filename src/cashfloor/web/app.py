@@ -109,6 +109,29 @@ def create_app(cfg: Config, with_scheduler: bool = False) -> FastAPI:
         except Exception:  # noqa: BLE001 — no keyring backend (headless box)
             return None
 
+    def d_paid_list(as_of: date) -> list[dict]:
+        """Occurrences the user marked paid in the last few days, for undo."""
+        from ..projection.engine import POSTED_LOOKBACK
+
+        d = db()
+        try:
+            rows = d.get_settings_prefix("paid:")
+            accts = {a.id: a for a in d.list_accounts(active_only=False)}
+            items = {i.id: i for i in d.list_items(active_only=False)}
+        finally:
+            d.close()
+        out = []
+        for key in rows:
+            _p, kind, ref, day = key.split(":", 3)
+            when = date.fromisoformat(day)
+            if (as_of - when).days > POSTED_LOOKBACK:
+                continue
+            ref_id = int(ref)
+            name = (items[ref_id].name if kind == "item" and ref_id in items
+                    else accts[ref_id].display_name if ref_id in accts else "?")
+            out.append({"kind": kind, "id": ref_id, "day": day, "name": name})
+        return sorted(out, key=lambda x: x["day"])
+
     @app.get("/", response_class=HTMLResponse)
     def dashboard(request: Request):
         d = db()
@@ -124,6 +147,7 @@ def create_app(cfg: Config, with_scheduler: bool = False) -> FastAPI:
             d.close()
         data = r.to_dict()
         upcoming = [x for x in data["days"] if x["events"]][:25]
+        recently_paid = d_paid_list(r.as_of)
         pool = [a for a in accounts if a.in_pool]
         setup_hints = []
         if not accounts:
@@ -135,8 +159,21 @@ def create_app(cfg: Config, with_scheduler: bool = False) -> FastAPI:
         return templates.TemplateResponse(request, "dashboard.html", {
             "p": data, "chart": svg_chart(data["days"], data["safety_buffer"]), "accounts": accounts,
             "pending": pending, "upcoming": upcoming, "syncs": syncs, "cfg": c, "setup_hints": setup_hints,
-            "connections": connections, "invest_total": invest_total,
+            "connections": connections, "invest_total": invest_total, "recently_paid": recently_paid,
         })
+
+    @app.post("/paid")
+    def mark_paid(kind: str = Form(...), ref_id: int = Form(...), day: str = Form(...), undo: bool = Form(False)):
+        """Mark a projected outflow occurrence as paid by hand (or undo that).
+        Items also roll to their next date so the Scheduled page agrees."""
+        from ..projection.engine import mark_occurrence_paid
+
+        d = db()
+        try:
+            mark_occurrence_paid(d, kind, ref_id, date.fromisoformat(day), undo=undo)
+        finally:
+            d.close()
+        return RedirectResponse("/", status_code=303)
 
     @app.post("/sync")
     def sync_now():

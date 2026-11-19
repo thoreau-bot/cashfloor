@@ -243,6 +243,17 @@ class Database:
             raise
 
     # -- settings (GUI overrides of config.toml) ---------------------------
+    def get_settings_prefix(self, prefix: str) -> dict[str, str]:
+        rows = self.conn.execute("SELECT key, value FROM meta WHERE key LIKE ?", (prefix + "%",))
+        return {r["key"]: r["value"] for r in rows}
+
+    def set_meta(self, key: str, value: str | None) -> None:
+        with self.tx() as c:
+            if value is None:
+                c.execute("DELETE FROM meta WHERE key=?", (key,))
+            else:
+                c.execute("INSERT OR REPLACE INTO meta(key, value) VALUES (?, ?)", (key, value))
+
     def get_settings(self) -> dict[str, str]:
         return {
             r["key"][4:]: r["value"]

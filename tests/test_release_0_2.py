@@ -338,3 +338,44 @@ def test_inflow_due_today_without_posting_is_assumed_landed(tmp_path):
     # switched off: payroll is counted again
     res = project(db, _cfg(assume_inflows_landed=False), as_of=today)
     assert any("Payroll" in e for e in res.days[0].events)
+
+
+def test_mark_paid_drops_occurrence_and_rolls_item(tmp_path):
+    from fastapi.testclient import TestClient
+
+    from cashfloor.web.app import create_app
+
+    cfg = Config()
+    cfg.general.data_dir = tmp_path / "data"
+    cfg.general.archive_dir = tmp_path / "statements"
+    cfg.general.inbox_dir = tmp_path / "inbox"
+    cfg.projection.safety_buffer = 0.0
+    cfg.ensure_dirs()
+    db = Database(cfg.db_path)
+    today = date.today()
+    chk = _checking(db, bal=1000_00)
+    it = db.save_item(ScheduledItem(id=None, name="Car loan via Zelle", account_id=chk.id, amount=-675_00,
+                                    frequency=Frequency.MONTHLY, next_date=today, source=ItemSource.MANUAL,
+                                    confirmed=True))
+    far = db.save_item(ScheduledItem(id=None, name="Rent", account_id=chk.id, amount=-500_00, frequency=Frequency.MONTHLY,
+                                     next_date=today + timedelta(days=10), source=ItemSource.MANUAL, confirmed=True))
+    card = _card(db, due_date=today + timedelta(days=2), statement_balance=120_00)
+    client = TestClient(create_app(cfg))
+    page = client.get("/").text
+    assert page.count(">Paid<") == 2  # the Zelle item and the card due in 2 days; rent (10 days out) has none
+    r = client.post("/paid", data={"kind": "item", "ref_id": str(it.id), "day": today.isoformat()},
+                    follow_redirects=False)
+    assert r.status_code == 303
+    res = project(db, cfg, as_of=today)
+    assert res.days[0].balance == 1000_00 and res.days[0].events == []
+    assert db.get_item(it.id).next_date > today
+    assert "Undo" in client.get("/").text
+    # the card's due event can be marked paid too
+    client.post("/paid", data={"kind": "account", "ref_id": str(card.id), "day": (today + timedelta(days=2)).isoformat()})
+    res = project(db, cfg, as_of=today)
+    assert all("Platinum" not in e for e in res.days[2].events)
+    # undo restores the item occurrence
+    client.post("/paid", data={"kind": "item", "ref_id": str(it.id), "day": today.isoformat(), "undo": "true"})
+    assert db.get_item(it.id).next_date == today
+    assert any("Car loan" in e for e in project(db, cfg, as_of=today).days[0].events)
+    assert far.id is not None

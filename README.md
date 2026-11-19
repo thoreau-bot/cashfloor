@@ -174,7 +174,7 @@ cashfloor floor [--json]            projection summary
 cashfloor discretionary             just the number (for scripts / widgets)
 cashfloor serve                     web dashboard + daily scheduler
 cashfloor accounts list|add|set|due label accounts, add manual ones, set due dates by hand
-cashfloor items list|add|confirm|dismiss|delete|pays|suggest-links
+cashfloor items list|add|confirm|dismiss|delete|pays|paid|due|suggest-links
 cashfloor secret set|set-json|delete
 cashfloor simplefin setup TOKEN
 ```

@@ -44,12 +44,13 @@
   {% for d in upcoming %}
   <tr>
     <td>{{ d.day }}</td>
-    <td>{% for e in d.events %}<div>{{ e }}</div>{% endfor %}</td>
+    <td>{% for e in d.detail %}<div>{{ e.label }}: {{ "{:+,.2f}".format(e.amount) }}{% if e.payable %} <form class="inline" method="post" action="/paid"><input type="hidden" name="kind" value="{{ e.kind }}"><input type="hidden" name="ref_id" value="{{ e.id }}"><input type="hidden" name="day" value="{{ d.day }}"><button class="secondary small" title="Already paid this by hand — drop it from the projection">Paid</button></form>{% endif %}</div>{% endfor %}</td>
     <td class="num {{ 'bad' if d.balance < p.safety_buffer else '' }}">{{ "{:,.2f}".format(d.balance) }}</td>
   </tr>
   {% else %}
   <tr><td colspan="3" class="muted">No scheduled movements. Add paychecks and bills under <a href="/items">Scheduled</a>, or run a sync so the detector can propose them.</td></tr>
   {% endfor %}
+  {% if recently_paid %}<tr><td colspan="3" class="small muted">Marked paid by hand: {% for r in recently_paid %}{{ r.name }} ({{ r.day }}) <form class="inline" method="post" action="/paid"><input type="hidden" name="kind" value="{{ r.kind }}"><input type="hidden" name="ref_id" value="{{ r.id }}"><input type="hidden" name="day" value="{{ r.day }}"><input type="hidden" name="undo" value="true"><button class="secondary small">Undo</button></form>{{ ' · ' if not loop.last }}{% endfor %}</td></tr>{% endif %}
 </table>
 </div>
 
