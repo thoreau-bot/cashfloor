@@ -252,14 +252,26 @@ def items_list(pending: bool = typer.Option(False, help="Only unconfirmed propos
     rprint(t)
 
 
+def _mask(text: str | None) -> str:
+    """Stable, non-identifying stand-in for a payee key or item name: first
+    two characters, word count, and a short hash so two lines can be told
+    apart without revealing who they are."""
+    import hashlib
+
+    t = (text or "").strip()
+    if not t:
+        return "''"
+    return f"{t[:2]}…({len(t.split())}w #{hashlib.sha1(t.lower().encode()).hexdigest()[:4]})"
+
+
 @items_app.command("due")
-def items_due(redact: bool = typer.Option(False, help="Mask person-to-person counterparties")) -> None:
+def items_due(redact: bool = typer.Option(False, help="Mask every payee/item name (safe to paste)")) -> None:
     """Items due in the next few days, with the recent postings on their account
     and whether one of them already counts as that occurrence (so the
-    projection skips it).  Paste this when day 0 looks double-counted."""
+    projection skips it).  Paste this (with --redact) when day 0 looks double-counted."""
     from .projection.engine import POSTED_LOOKAHEAD, POSTED_LOOKBACK, already_posted
     from .projection.recurrence import advance_past
-    from .projection.recurring import is_p2p, normalize_payee
+    from .projection.recurring import normalize_payee
 
     db = _db()
     cfg = _state["cfg"]
@@ -269,6 +281,10 @@ def items_due(redact: bool = typer.Option(False, help="Mask person-to-person cou
         accts = {a.id: a for a in db.list_accounts()}
         recent = db.list_transactions(since=today - timedelta(days=POSTED_LOOKBACK + POSTED_LOOKAHEAD))
         pend_ok = {a.id for a in accts.values() if a.available is not None} if cfg.projection.use_available_balance else set()
+        rprint(f"today {today} · lookahead {POSTED_LOOKAHEAD}d · lookback {POSTED_LOOKBACK}d · "
+               f"use_available_balance={cfg.projection.use_available_balance} · "
+               f"accounts with available balance: {sorted(pend_ok)} · recent postings: {len(recent)}")
+        show = _mask if redact else (lambda t: repr(t))
         for it in db.list_items():
             if not it.confirmed:
                 continue
@@ -276,16 +292,18 @@ def items_due(redact: bool = typer.Option(False, help="Mask person-to-person cou
             if (nd - today).days > POSTED_LOOKAHEAD:
                 continue
             hit = already_posted(cfg, it, nd, today, recent, aliases, pend_ok)
-            rprint(f"[bold]{it.name}[/bold]  {from_cents(it.amount):+,.2f}  due {nd}  pattern={it.payee_pattern!r}  "
-                   f"-> {'[green]already posted, skipped[/green]' if hit else '[yellow]not matched, will be counted[/yellow]'}")
+            a = accts.get(it.account_id)
+            rprint(f"[bold]item #{it.id}[/bold] {show(it.name)}  {from_cents(it.amount):+,.2f}  due {nd}  "
+                   f"acct #{it.account_id} ({a.type.value if a else '?'}, available={'yes' if a and a.available is not None else 'no'})  "
+                   f"pattern={show(it.payee_pattern)}  -> "
+                   + ("[green]already posted, skipped[/green]" if hit else "[yellow]not matched, will be counted[/yellow]"))
             for t in recent:
                 if t.account_id != it.account_id or (t.amount > 0) != (it.amount > 0):
                     continue
                 key = normalize_payee(t.payee or t.memo)
-                shown = (key.split()[0] + " (person)") if redact and is_p2p(key) else key
                 al = aliases.get((t.account_id, key))
-                rprint(f"    {t.posted}  {from_cents(t.amount):+,.2f}  {'pending ' if t.pending else ''}key={shown!r}"
-                       + (f"  alias->{al!r}" if al else ""))
+                rprint(f"    {t.posted}  {from_cents(t.amount):+,.2f}  {'PENDING ' if t.pending else ''}key={show(key)}"
+                       + (f"  alias->{show(al)}" if al else ""))
     finally:
         db.close()
 
