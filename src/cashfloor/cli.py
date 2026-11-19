@@ -14,7 +14,7 @@ from rich.table import Table
 from . import __version__, secrets
 from .config import apply_overrides, load_config
 from .db import Database
-from .models import AccountType, Frequency, ItemSource, ScheduledItem, from_cents, to_cents
+from .models import AccountType, Frequency, ItemSource, ScheduledItem, frequency_label, from_cents, to_cents
 from .projection.engine import explain, project
 from .statements.organizer import ingest_statement_file
 from .sync import run_sync
@@ -80,7 +80,8 @@ def sync(only: str | None = typer.Option(None, help="Run just this provider name
         db.close()
     rprint(f"ok: {s.providers_ok}  failed: {s.providers_failed}")
     rprint(f"accounts {s.accounts} · transactions {s.transactions} · statements {s.statements} "
-           f"(review {s.statements_review}) · new proposals {s.new_proposals}")
+           f"(review {s.statements_review}) · new proposals {s.new_proposals}"
+           + (f" · retired {s.retired_items} merged" if s.retired_items else ""))
     if s.providers_failed:
         raise typer.Exit(2)
 
@@ -246,7 +247,7 @@ def items_list(pending: bool = typer.Option(False, help="Only unconfirmed propos
     t = Table("id", "name", "account", "amount", "freq", "next", "src", "conf", "ok")
     for i in rows:
         t.add_row(str(i.id), i.name, accts[i.account_id].display_name if i.account_id in accts else "?",
-                  f"{from_cents(i.amount):+,.2f}", i.frequency.value, i.next_date.isoformat(), i.source.value,
+                  f"{from_cents(i.amount):+,.2f}", frequency_label(i.frequency), i.next_date.isoformat(), i.source.value,
                   f"{i.confidence:.2f}", "✓" if i.confirmed else "[yellow]?[/yellow]")
     rprint(t)
 
@@ -276,7 +277,7 @@ def items_detect(
         style = "green" if c.verdict.startswith("proposed") else "yellow"
         shown = (c.pattern.split()[0] + " (person)") if redact and is_p2p(c.pattern) else c.pattern
         t.add_row(accts[c.account_id].display_name if c.account_id in accts else "?", shown, str(c.count),
-                  c.frequency.value if c.frequency else "", c.last.isoformat() if c.last else "",
+                  frequency_label(c.frequency) if c.frequency else "", c.last.isoformat() if c.last else "",
                   f"{from_cents(c.latest_amount):,.2f}", f"[{style}]{c.verdict}[/{style}]")
     rprint(t)
 

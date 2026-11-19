@@ -48,6 +48,24 @@ class Frequency(StrEnum):
     YEARLY = "yearly"
 
 
+FREQUENCY_LABELS = {
+    Frequency.ONCE: "once",
+    Frequency.WEEKLY: "weekly",
+    Frequency.BIWEEKLY: "every 2 weeks",
+    Frequency.SEMIMONTHLY: "twice a month",
+    Frequency.MONTHLY: "monthly",
+    Frequency.QUARTERLY: "quarterly",
+    Frequency.SEMIANNUAL: "every 6 months",
+    Frequency.YEARLY: "yearly",
+}
+
+
+def frequency_label(f: Frequency | str) -> str:
+    """'biweekly' means two different things to different people; the UI says
+    which one is meant.  Config, CLI arguments and the API keep the enum values."""
+    return FREQUENCY_LABELS.get(Frequency(f), str(f))
+
+
 def to_cents(amount: float | str | int) -> int:
     """Parse a user-typed or formatted amount: '1,234.56', '$-12.00', '(12.00)', -12.0."""
     from decimal import ROUND_HALF_UP, Decimal

@@ -14,7 +14,16 @@ from fastapi.templating import Jinja2Templates
 from .. import __version__, secrets
 from ..config import GUI_SETTINGS, Config, apply_overrides
 from ..db import Database
-from ..models import INVESTMENT_TYPES, AccountType, Frequency, ItemSource, ScheduledItem, from_cents, to_cents
+from ..models import (
+    INVESTMENT_TYPES,
+    AccountType,
+    Frequency,
+    ItemSource,
+    ScheduledItem,
+    frequency_label,
+    from_cents,
+    to_cents,
+)
 from ..projection.engine import project
 from ..sync import run_sync
 
@@ -65,6 +74,7 @@ def svg_chart(days: list[dict], buffer: float, width: int = 900, height: int = 2
 def create_app(cfg: Config, with_scheduler: bool = False) -> FastAPI:
     app = FastAPI(title="cashfloor", docs_url="/api/docs")
     templates = Jinja2Templates(directory=str(TEMPLATES))
+    templates.env.filters["freq"] = frequency_label
     templates.env.filters["money"] = lambda c: f"{from_cents(c):,.2f}" if c is not None else ""
     templates.env.globals["asset_v"] = __version__  # static URLs carry ?v=<version> so updates are live on reload
 
@@ -442,6 +452,12 @@ def create_app(cfg: Config, with_scheduler: bool = False) -> FastAPI:
             "retirement": retirement, "healthcare": healthcare, "holdings": holdings, "accts": accts, "hv": hv,
             "retirement_total": sum(a.balance for a in retirement),
             "retirement_hold": sum(hv[a.id].value for a in retirement if a.id in hv),
+            "healthcare_total": sum(a.balance for a in healthcare),
+            "healthcare_hold": sum(hv[a.id].value for a in healthcare if a.id in hv),
+            "fsa_forfeit": sum(a.balance for a in healthcare if a.type == AccountType.FSA and a.balance > 0),
+            "hold_cost": sum(h.cost_basis or 0 for h in holdings),
+            "hold_value": sum(h.market_value or 0 for h in holdings),
+            "hold_gain": sum((h.market_value or 0) - (h.cost_basis or 0) for h in holdings),
             "year_end": year_end, "days_left": (year_end - today).days, "warn_days": c.projection.fsa_warn_days,
             "warn_from": year_end - timedelta(days=c.projection.fsa_warn_days),
         })

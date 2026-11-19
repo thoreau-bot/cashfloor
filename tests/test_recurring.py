@@ -167,3 +167,69 @@ def test_interleaved_but_dissimilar_amounts_are_not_merged():
         txs.append(_tx(100 + i, first + timedelta(days=14 * i + 7), 50_000, "GIG PLATFORM PAYOUT", acct=1))
     items = detect_recurring(cfg, txs, today=today)
     assert sorted(i.amount for i in items if i.amount > 0) == [50_000, 330_000]
+
+
+def test_merged_series_retires_its_old_item_and_carries_confirmation(tmp_path):
+    """Kendall's case: an earlier sync proposed both halves; the user confirmed
+    the 4-hit half.  After the merge the survivor must be the only item, and
+    it must inherit the confirmation."""
+    from cashfloor.db import Database
+    from cashfloor.models import Account, AccountType, ItemSource, ScheduledItem
+    from cashfloor.projection.recurring import analyse_recurring
+    from cashfloor.sync import SyncSummary, reconcile_proposals
+
+    cfg = Config()
+    today = date(2026, 11, 19)
+    db = Database(tmp_path / "t.sqlite")
+    chk = db.upsert_account(Account(id=None, provider="t", external_id="c", name="Checking", institution="Bank",
+                                    type=AccountType.CHECKING, balance=0))
+    first = today - timedelta(days=14 * 36 + 3)
+    txs = []
+    for i in range(36):
+        d = first + timedelta(days=14 * i)
+        if i in {30, 31, 32, 33}:
+            txs.append(_tx(i, d, 319_299, "ACME WIDGETS INC DIR DEP", acct=chk.id))
+        else:
+            txs.append(_tx(i, d, 319_300, "ACME WIDGETS PAYROLL", acct=chk.id))
+    # stale state from before the merge existed
+    db.save_item(ScheduledItem(id=None, name="Acme Widgets Inc Dir Dep", account_id=chk.id, amount=319_299,
+                               frequency=Frequency.BIWEEKLY, next_date=today, source=ItemSource.DETECTED,
+                               confirmed=True, payee_pattern=normalize_payee("ACME WIDGETS INC DIR DEP")))
+    db.save_item(ScheduledItem(id=None, name="Acme Widgets Payroll", account_id=chk.id, amount=319_300,
+                               frequency=Frequency.BIWEEKLY, next_date=today, source=ItemSource.DETECTED,
+                               confirmed=False, payee_pattern="acme widgets payroll"))
+    summary = SyncSummary()
+    reconcile_proposals(db, analyse_recurring(cfg, txs, today), summary)
+    items = db.list_items(active_only=False)
+    assert len(items) == 1 and summary.retired_items == 1
+    assert items[0].payee_pattern == "acme widgets payroll" and items[0].confirmed and items[0].amount == 319_300
+
+
+def test_stale_key_duplicate_is_folded_into_the_current_series(tmp_path):
+    """An item proposed by an older detector run (different payee key, only the
+    live feed's 4 hits, confirmed by the user) lingers next to the current
+    34-hit proposal.  Same cadence, amount within tolerance, same next date:
+    fold it, keep the confirmation."""
+    from cashfloor.db import Database
+    from cashfloor.models import Account, AccountType, ItemSource, ScheduledItem
+    from cashfloor.projection.recurring import analyse_recurring
+    from cashfloor.sync import SyncSummary, reconcile_proposals
+
+    cfg = Config()
+    today = date(2026, 11, 19)
+    db = Database(tmp_path / "t.sqlite")
+    chk = db.upsert_account(Account(id=None, provider="t", external_id="c", name="Checking", institution="Bank",
+                                    type=AccountType.CHECKING, balance=0))
+    first = today - timedelta(days=14 * 34)
+    txs = [_tx(i, first + timedelta(days=14 * i), 319_300 if i < 30 else 319_299, "ACME WIDGETS PAYROLL", acct=chk.id)
+           for i in range(34)]
+    stale = db.save_item(ScheduledItem(id=None, name="Acme Widgets Payroll", account_id=chk.id, amount=319_299,
+                                       frequency=Frequency.BIWEEKLY, next_date=today, source=ItemSource.DETECTED,
+                                       confirmed=True, payee_pattern="acme widgets payroll dep xx",
+                                       notes="detected from 4 transactions"))
+    summary = SyncSummary()
+    reconcile_proposals(db, analyse_recurring(cfg, txs, today), summary)
+    items = db.list_items(active_only=False)
+    assert len(items) == 1 and summary.retired_items == 1 and summary.new_proposals == 1
+    assert items[0].id != stale.id and items[0].confirmed and items[0].payee_pattern == "acme widgets payroll"
+    assert items[0].next_date == today

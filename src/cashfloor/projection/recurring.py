@@ -201,12 +201,19 @@ def merge_income_series(groups: dict, tolerance: float = 0.10) -> tuple[dict, di
                     small_amt = statistics.median(abs(t.amount) for t in small_txs)
                     if abs(big_amt - small_amt) / max(big_amt, 1) > tolerance:
                         continue
-                    if any(abs((a.posted - b.posted).days) < 3 for a in big_txs for b in small_txs):
-                        continue  # same-day hits are two things, not one
-                    reg, med = _regularity(sorted(big_dates + [t.posted for t in small_txs]))
+                    # Hits that land on top of the big series' own hits are a second
+                    # payer on the same paydays, not the same stream — unless they are
+                    # a stray one or two (a statement/live duplicate the 3-day de-dup missed).
+                    clash = [b for b in small_txs if any(abs((a.posted - b.posted).days) < 3 for a in big_txs)]
+                    if len(clash) > max(1, len(small_txs) // 10):
+                        continue
+                    fill = [b for b in small_txs if b not in clash]
+                    if not fill:
+                        continue
+                    reg, med = _regularity(sorted(big_dates + [t.posted for t in fill]))
                     if reg < 0.8 or reg < big_reg or med > big_med:
                         continue
-                    groups[big] = big_txs + list(small_txs)
+                    groups[big] = big_txs + fill
                     m = merges.setdefault(big, {"amount": abs(original[big][-1].amount), "absorbed": []})
                     m["absorbed"].append((small[1], len(small_txs)))
                     absorbed[small] = big
@@ -227,6 +234,7 @@ class Candidate:
     latest_amount: int
     verdict: str  # "proposed" or the rejection reason
     proposal: ScheduledItem | None = None
+    merged_into: str | None = None  # pattern of the series this one was folded into
 
 
 def analyse_recurring(
@@ -259,7 +267,7 @@ def analyse_recurring(
     out: list[Candidate] = []
     for small, big in absorbed.items():
         out.append(Candidate(small[0], small[1], counts[small], None, None, 0,
-                             f"merged into {_title(big[1])!r} (same income source)"))
+                             f"merged into {_title(big[1])!r} (same income source)", merged_into=big[1]))
     for (account_id, pattern, _sign), g in groups.items():
         g.sort(key=lambda t: t.posted)
         dedup: list[Transaction] = []

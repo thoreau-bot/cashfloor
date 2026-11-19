@@ -18,7 +18,7 @@ from .config import Config
 from .db import Database
 from .models import AccountType, ItemSource
 from .projection.recurrence import advance_past
-from .projection.recurring import detect_recurring
+from .projection.recurring import analyse_recurring
 from .providers import build_provider
 from .statements.organizer import ingest_statement_file
 
@@ -34,6 +34,7 @@ class SyncSummary:
     statements: int = 0
     statements_review: int = 0
     new_proposals: int = 0
+    retired_items: int = 0  # detected items retired because their series merged into another
     connection_errors: dict[str, str] = field(default_factory=dict)
 
 
@@ -141,9 +142,48 @@ def run_sync(cfg: Config, db: Database, only: str | None = None, today: date | N
             db.save_item(it)
 
     # Propose recurring items (never overwrite confirmed ones).
-    proposals = detect_recurring(cfg, db.list_transactions(since=today.replace(year=today.year - 3)), today,
-                                 db.get_payee_aliases())
-    for p in proposals:
+    candidates = analyse_recurring(cfg, db.list_transactions(since=today.replace(year=today.year - 3)), today,
+                                   db.get_payee_aliases())
+    reconcile_proposals(db, candidates, summary, cfg.recurring.income_merge_tolerance)
+    return summary
+
+
+def _same_series(a, b, tolerance: float) -> bool:
+    """Two detected items on one account describing the same stream: same
+    sign and cadence, amounts within `tolerance`, next dates in phase."""
+    if a.account_id != b.account_id or a.frequency != b.frequency or (a.amount > 0) != (b.amount > 0):
+        return False
+    if abs(abs(a.amount) - abs(b.amount)) / max(abs(a.amount), 1) > tolerance:
+        return False
+    return abs((a.next_date - b.next_date).days) <= 3
+
+
+def _fold(db: Database, old, survivor) -> None:
+    """Retire `old` in favour of `survivor`, carrying over what the user set."""
+    changed = False
+    if old.confirmed and old.active and not survivor.confirmed:
+        survivor.confirmed, survivor.active = True, True
+        changed = True
+    if old.counter_account_id and not survivor.counter_account_id:
+        survivor.counter_account_id = old.counter_account_id
+        changed = True
+    if old.weekend_rule != "none" and survivor.weekend_rule == "none":
+        survivor.weekend_rule = old.weekend_rule
+        changed = True
+    if changed:
+        db.save_item(survivor)
+    db.delete_item(old.id)
+
+
+def reconcile_proposals(db: Database, candidates: list, summary: SyncSummary, tolerance: float = 0.10) -> None:
+    """Save new proposals, refresh unconfirmed ones, and retire stale
+    duplicates of a series.  A duplicate arises two ways: the detector folded
+    one payee key into another (split paycheck), or an item was proposed under
+    a key an older detector produced and the series now lives under a new key
+    (statement wording learned later, a changed normaliser).  Either way the
+    survivor inherits any confirmation, pays-link or weekend rule the user
+    gave the retired item, so a merge never silently un-confirms income."""
+    for p in (c.proposal for c in candidates if c.proposal is not None):
         existing = db.find_item_by_pattern(p.account_id, p.payee_pattern or "")
         if existing is None:
             db.save_item(p)
@@ -152,4 +192,25 @@ def run_sync(cfg: Config, db: Database, only: str | None = None, today: date | N
             existing.amount, existing.frequency = p.amount, p.frequency
             existing.next_date, existing.confidence, existing.notes = p.next_date, p.confidence, p.notes
             db.save_item(existing)
-    return summary
+    live_keys = {(c.account_id, c.pattern) for c in candidates if c.proposal is not None}
+    for c in candidates:
+        if not c.merged_into:
+            continue
+        old = db.find_item_by_pattern(c.account_id, c.pattern)
+        survivor = db.find_item_by_pattern(c.account_id, c.merged_into)
+        if old is None or survivor is None or old.source != ItemSource.DETECTED or old.id == survivor.id:
+            continue
+        _fold(db, old, survivor)
+        summary.retired_items += 1
+    # Stale keys: a detected item whose pattern no current series produces, but
+    # which matches a current proposal in cadence, amount and phase.
+    items = [i for i in db.list_items(active_only=False) if i.source == ItemSource.DETECTED]
+    current = [i for i in items if (i.account_id, i.payee_pattern or "") in live_keys]
+    for old in items:
+        if (old.account_id, old.payee_pattern or "") in live_keys:
+            continue
+        match = next((s for s in current if s.id != old.id and _same_series(old, s, tolerance)), None)
+        if match is None:
+            continue
+        _fold(db, old, match)
+        summary.retired_items += 1
