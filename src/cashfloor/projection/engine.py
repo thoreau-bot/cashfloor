@@ -63,25 +63,50 @@ POSTED_LOOKAHEAD = 3  # an occurrence due within this many days may already have
 POSTED_LOOKBACK = 4  # ...and the posting may sit this many days before the due date (early payday)
 
 
-def already_posted(cfg: Config, it: ScheduledItem, occ: date, as_of: date, recent: list[Transaction]) -> bool:
+def already_posted(
+    cfg: Config,
+    it: ScheduledItem,
+    occ: date,
+    as_of: date,
+    recent: list[Transaction],
+    aliases: dict[tuple[int, str], str] | None = None,
+    pending_in_balance: set[int] | None = None,
+) -> bool:
     """True when a transaction matching this item's next occurrence has already
     hit the account: the balance includes it, so the projection must not add it
     again.  Checked only for the first few days of the horizon — today's payroll
-    that posted this morning, a bill drafted a day early."""
+    that posted this morning, a bill drafted a day early.
+
+    A posting counts when it is on the item's account, in the same direction,
+    within POSTED_LOOKBACK days before the due date (up to as_of), and either
+    (a) its payee normalises to the item's pattern — via the learned statement
+    alias, since detected items carry the statement wording — or (b) its amount
+    is within $1 of the item's: an exact-amount hit a day or two from the due
+    date is the same payment whatever the bank called it.  Otherwise the amount
+    must be within recurring.amount_tolerance *and* the payee must match.
+    Pending postings count only for accounts whose balance already includes
+    them (available balance in use)."""
     if (occ - as_of).days > POSTED_LOOKAHEAD:
         return False
+    aliases = aliases or {}
+    pending_ok = pending_in_balance or set()
     tol = cfg.recurring.amount_tolerance
     pat = it.payee_pattern
     for t in recent:
-        if t.account_id != it.account_id or t.pending:
+        if t.account_id != it.account_id or (t.pending and t.account_id not in pending_ok):
             continue
         if not (occ - timedelta(days=POSTED_LOOKBACK) <= t.posted <= as_of):
             continue
         if (t.amount > 0) != (it.amount > 0):
             continue
-        if abs(abs(t.amount) - abs(it.amount)) > max(100, tol * abs(it.amount)):
+        diff = abs(abs(t.amount) - abs(it.amount))
+        if diff <= 100:
+            return True
+        if diff > tol * abs(it.amount):
             continue
-        if pat and normalize_payee(t.payee or t.memo) != pat and not normalize_payee(t.payee or t.memo).startswith(pat):
+        key = normalize_payee(t.payee or t.memo)
+        key = aliases.get((t.account_id, key), key)
+        if pat and key != pat and not key.startswith(pat) and not pat.startswith(key):
             continue
         return True
     return False
@@ -94,12 +119,16 @@ def build_events(
     as_of: date,
     horizon_end: date,
     recent_txs: list[Transaction] | None = None,
+    aliases: dict[tuple[int, str], str] | None = None,
 ) -> tuple[dict[date, list[tuple[int, str]]], int]:
     """Return {date: [(amount_cents, label), ...]} and count of unconfirmed items.
     `recent_txs` (the last week or so of postings) lets an occurrence that has
     already hit the account be skipped instead of counted twice."""
     recent = recent_txs or []
     pool = pool_accounts(cfg, accounts)
+    pending_in_balance = (
+        {a.id for a in pool if a.available is not None} if cfg.projection.use_available_balance else set()
+    )
     pool_ids = {a.id for a in pool}
     events: dict[date, list[tuple[int, str]]] = defaultdict(list)
     unconfirmed = 0
@@ -122,7 +151,7 @@ def build_events(
             continue  # nothing to do with the pool
         sign = 1 if src_in else -1  # money leaving `account_id` enters the counter account
         for d in occurrences(it, as_of, horizon_end):
-            if recent and already_posted(cfg, it, d, as_of, recent):
+            if recent and already_posted(cfg, it, d, as_of, recent, aliases, pending_in_balance):
                 continue  # already in the balance
             _event(events, d, sign * it.amount, it.name)
 
@@ -199,7 +228,7 @@ def project(db: Database, cfg: Config, as_of: date | None = None) -> ProjectionR
     pool = pool_accounts(cfg, accounts)
     starting = sum((a.spendable if cfg.projection.use_available_balance else a.balance) for a in pool)
     recent = db.list_transactions(since=as_of - timedelta(days=POSTED_LOOKBACK + POSTED_LOOKAHEAD))
-    events, unconfirmed = build_events(cfg, accounts, items, as_of, horizon_end, recent)
+    events, unconfirmed = build_events(cfg, accounts, items, as_of, horizon_end, recent, db.get_payee_aliases())
     warnings: list[str] = []
     for a in pool:
         if a.sync_error:

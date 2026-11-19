@@ -295,3 +295,25 @@ def test_sync_roll_skips_posted_occurrence(tmp_path):
                                     confirmed=True, payee_pattern="acme widgets payroll"))
     run_sync(cfg, db, today=today)
     assert db.get_item(it.id).next_date == today + timedelta(days=14)
+
+
+def test_already_posted_matches_statement_alias_and_exact_amount(tmp_path):
+    """Detected items carry the statement wording; the live feed words the same
+    deposit differently.  The alias learned at import bridges them, and an
+    exact-amount hit counts even with no alias at all."""
+    from cashfloor.models import Transaction
+    from cashfloor.projection.engine import already_posted
+
+    cfg = _cfg()
+    today = date(2026, 11, 19)
+    it = ScheduledItem(id=1, name="Payroll", account_id=7, amount=3193_00, frequency=Frequency.BIWEEKLY,
+                       next_date=today, source=ItemSource.DETECTED, confirmed=True, payee_pattern="acme widgets payroll")
+    live = Transaction(None, 7, "x", today, 3193_00, "DEPOSIT ACME WIDGETS INC DIRECT DEP 1234567")
+    assert already_posted(cfg, it, today, today, [live])  # exact amount, wording irrelevant
+    off = Transaction(None, 7, "y", today, 3100_00, "DEPOSIT ACME WIDGETS INC DIRECT DEP 1234567")
+    assert not already_posted(cfg, it, today, today, [off])  # 3% off and payee key differs, no alias
+    aliases = {(7, "acme widgets inc"): "acme widgets payroll"}
+    assert already_posted(cfg, it, today, today, [off], aliases)  # alias bridges the wording
+    pend = Transaction(None, 7, "z", today, 3193_00, "ACME WIDGETS PAYROLL", pending=True)
+    assert not already_posted(cfg, it, today, today, [pend])
+    assert already_posted(cfg, it, today, today, [pend], None, {7})

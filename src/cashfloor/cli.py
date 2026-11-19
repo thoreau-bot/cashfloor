@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 import typer
@@ -250,6 +250,44 @@ def items_list(pending: bool = typer.Option(False, help="Only unconfirmed propos
                   f"{from_cents(i.amount):+,.2f}", frequency_label(i.frequency), i.next_date.isoformat(), i.source.value,
                   f"{i.confidence:.2f}", "✓" if i.confirmed else "[yellow]?[/yellow]")
     rprint(t)
+
+
+@items_app.command("due")
+def items_due(redact: bool = typer.Option(False, help="Mask person-to-person counterparties")) -> None:
+    """Items due in the next few days, with the recent postings on their account
+    and whether one of them already counts as that occurrence (so the
+    projection skips it).  Paste this when day 0 looks double-counted."""
+    from .projection.engine import POSTED_LOOKAHEAD, POSTED_LOOKBACK, already_posted
+    from .projection.recurrence import advance_past
+    from .projection.recurring import is_p2p, normalize_payee
+
+    db = _db()
+    cfg = _state["cfg"]
+    try:
+        today = date.today()
+        aliases = db.get_payee_aliases()
+        accts = {a.id: a for a in db.list_accounts()}
+        recent = db.list_transactions(since=today - timedelta(days=POSTED_LOOKBACK + POSTED_LOOKAHEAD))
+        pend_ok = {a.id for a in accts.values() if a.available is not None} if cfg.projection.use_available_balance else set()
+        for it in db.list_items():
+            if not it.confirmed:
+                continue
+            nd = advance_past(it, today)
+            if (nd - today).days > POSTED_LOOKAHEAD:
+                continue
+            hit = already_posted(cfg, it, nd, today, recent, aliases, pend_ok)
+            rprint(f"[bold]{it.name}[/bold]  {from_cents(it.amount):+,.2f}  due {nd}  pattern={it.payee_pattern!r}  "
+                   f"-> {'[green]already posted, skipped[/green]' if hit else '[yellow]not matched, will be counted[/yellow]'}")
+            for t in recent:
+                if t.account_id != it.account_id or (t.amount > 0) != (it.amount > 0):
+                    continue
+                key = normalize_payee(t.payee or t.memo)
+                shown = (key.split()[0] + " (person)") if redact and is_p2p(key) else key
+                al = aliases.get((t.account_id, key))
+                rprint(f"    {t.posted}  {from_cents(t.amount):+,.2f}  {'pending ' if t.pending else ''}key={shown!r}"
+                       + (f"  alias->{al!r}" if al else ""))
+    finally:
+        db.close()
 
 
 @items_app.command("detect")

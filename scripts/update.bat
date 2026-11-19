@@ -25,6 +25,6 @@ if exist ".venv\Scripts\activate.bat" (
 ) else (
   echo No .venv yet - run scripts\setup.bat next.
 )
-for /f "tokens=3 delims== " %%v in ('findstr /b "version" pyproject.toml') do echo Installed %%v
+for /f "tokens=2 delims==" %%v in ('findstr /b "version" pyproject.toml') do echo Installed %%v
 echo Done. Start scripts\serve.bat; the version shows top-right in the dashboard.
 pause

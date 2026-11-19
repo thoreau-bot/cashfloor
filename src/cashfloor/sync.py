@@ -139,9 +139,10 @@ def run_sync(cfg: Config, db: Database, only: str | None = None, today: date | N
     # already posted (this morning's payroll), so the Scheduled page shows the
     # genuinely next date.
     recent = db.list_transactions(since=today - timedelta(days=POSTED_LOOKBACK + POSTED_LOOKAHEAD))
+    aliases = db.get_payee_aliases()
     for it in db.list_items():
         nd = advance_past(it, today)
-        if it.frequency != Frequency.ONCE and already_posted(cfg, it, nd, today, recent):
+        if it.frequency != Frequency.ONCE and already_posted(cfg, it, nd, today, recent, aliases):
             nd = advance_past(it, nd + timedelta(days=1))
         if nd != it.next_date:
             it.next_date = nd
