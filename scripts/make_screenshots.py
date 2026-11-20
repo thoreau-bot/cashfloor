@@ -190,6 +190,7 @@ port = {PORT}
             b = p.chromium.launch()
             page = b.new_page(viewport={"width": 1280, "height": 900}, device_scale_factor=1.5, color_scheme="dark")
             for path, name in (("/", "dashboard"), ("/accounts", "accounts"), ("/items", "scheduled"),
+                               ("/investments", "investments"), ("/liabilities", "liabilities"),
                                ("/statements", "statements"), ("/settings", "settings")):
                 page.goto(f"http://127.0.0.1:{PORT}{path}")
                 page.wait_for_timeout(300)
