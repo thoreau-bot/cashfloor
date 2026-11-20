@@ -23,7 +23,7 @@ Projection accuracy: no more double-counted card payments, no more silently igno
 - Saving an Accounts row with a four-figure statement balance or minimum (shown as `1,234.56`) failed; amounts typed with commas, `$` or parentheses are now accepted everywhere.
 
 **Upgrading**
-- New: close the dashboard, drop the zip into your install folder, run `scripts\update.bat` (or `scripts/update.sh`), start `serve` again. The installed version now shows top-right in the dashboard. The database upgrades itself on first start.
+- New: close the dashboard, drop the release zip (`cashfloor-0.2.0-<commit>.zip`) into your install folder, run `scripts\update.bat` (or `scripts/update.sh`), start `serve` again. The installed version now shows top-right in the dashboard. The database upgrades itself on first start.
 - Open the Scheduled page once: anything marked *suggested* in the new **Pays** column is worth a look.
 
 ## 0.1.0

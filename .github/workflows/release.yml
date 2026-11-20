@@ -47,8 +47,10 @@ jobs:
         if: steps.ver.outputs.exists == 'false'
         run: |
           v=${{ steps.ver.outputs.version }}
+          h=$(git rev-parse --short HEAD)
           mkdir -p dist
-          git archive --format=zip --prefix="cashfloor/" -o "dist/cashfloor-$v.zip" HEAD
+          # the commit hash in the name keeps two builds of one version apart
+          git archive --format=zip --prefix="cashfloor/" -o "dist/cashfloor-$v-$h.zip" HEAD
 
       - name: Release notes from changelog
         if: steps.ver.outputs.exists == 'false'
@@ -65,4 +67,4 @@ jobs:
           git config user.email "123335310+thoreau-bot@users.noreply.github.com"
           git tag -a "v$v" -m "cashfloor $v"
           git push origin "v$v"
-          gh release create "v$v" "dist/cashfloor-$v.zip" --title "cashfloor $v" --notes-file dist/notes.md
+          gh release create "v$v" dist/cashfloor-*.zip --title "cashfloor $v" --notes-file dist/notes.md

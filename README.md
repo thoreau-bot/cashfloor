@@ -78,7 +78,7 @@ Scheduler entry that launches `cashfloor serve`.
 
 ## Updating
 
-Close the dashboard window, drop the release zip (`cashfloor-<version>.zip`)
+Close the dashboard window, drop the release zip (`cashfloor-<version>-<commit>.zip`)
 into your install folder, and run `scripts\update.bat` (Windows) or
 `scripts/update.sh`. It unpacks the zip over the install — your
 `config.toml`, `data/`, `statements/`, `inbox/` and `.venv` are never
