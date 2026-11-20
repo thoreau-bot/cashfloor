@@ -44,7 +44,7 @@ class ProjectionConfig(BaseModel):
     default_card_pay_day: int = 1
     # Never assume a payoff bigger than this; a "card" owing more is almost certainly a
     # mis-typed loan, and the dashboard says so instead of subtracting it.
-    max_assumed_payoff: float = 25000.0
+    max_assumed_payoff: float = 5000.0
     # An inflow due today (or earlier) with no posting yet is taken as already in
     # today's balance: direct deposits land overnight, and banks hand out the new
     # balance hours before they list the transaction.  Outflows are never assumed.
