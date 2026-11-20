@@ -117,6 +117,10 @@ card/loan/utility due dates (from statements or manual)     ──► payment ev
 * **Investments** (401k, IRA, brokerage, HSA, FSA) live on their own tab and
   never touch the floor. An FSA is use-it-or-lose-it: its forfeiture at Dec 31
   is shown, and the dashboard warns from `fsa_warn_days` (61) before year end.
+* **Loans and mortgages** are liabilities, not bills: only their monthly
+  installment is projected (from the payment field, a sane statement amount,
+  or the payment history on the loan's own feed), never the balance. The
+  Liabilities tab shows what's owed and how each one is projected.
 * **Manual accounts** cover anything no provider supplies — an insurance
   policy, a utility, a card the Bridge can't see. Add them on the Accounts
   page (or `cashfloor accounts add`) and keep their balance and due figures

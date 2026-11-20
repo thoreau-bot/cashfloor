@@ -90,6 +90,17 @@ def seed(cfg: Config) -> None:
         Holding(k401.id, "H-1", "TSPX", "Tailspin Total Market Index", 412_337_000, 5_120_000, None, 6_904_210, as_of=NOW),
         Holding(k401.id, "H-2", "TSBX", "Tailspin Bond Index", 182_040_000, 1_700_000, None, 1_838_105, as_of=NOW),
     ])
+    # Liabilities tab: a mortgage with a known installment, a car loan whose payment sync learned.
+    mort = db.upsert_account(Account(id=None, provider="simplefin", external_id="ACT-7", name="HOME MORTGAGE",
+                                     institution="Woodgrove Bank", type=AccountType.MORTGAGE, balance=-28_412_060,
+                                     minimum_payment=184_900, due_date=TODAY.replace(day=1) + timedelta(days=32),
+                                     balance_as_of=NOW, last_synced=NOW, conn_id="CONN-nw"))
+    db.set_account_user_fields(mort.id, key="mortgage", nickname="Mortgage")
+    car = db.upsert_account(Account(id=None, provider="simplefin", external_id="ACT-8", name="AUTO LOAN",
+                                    institution="Woodgrove Bank", type=AccountType.LOAN, balance=-1_840_000,
+                                    balance_as_of=NOW, last_synced=NOW, conn_id="CONN-nw"))
+    db.set_account_user_fields(car.id, key="car", nickname="Car loan")
+    db.set_payment_auto(car.id, 12, 41_233)
     # An account no provider supplies, kept by hand.
     db.add_manual_account(name="Homeowners Policy", institution="Woodgrove Mutual", type=AccountType.UTILITY,
                           key="home-ins", last4="3382", statement_balance=48_900, due_date=TODAY + timedelta(days=40))

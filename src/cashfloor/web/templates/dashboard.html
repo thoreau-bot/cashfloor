@@ -87,6 +87,7 @@
   {% endfor %}
 </table>
 {% if invest_total %}<p class="small muted">Investments (not in pool): {{ invest_total | money }} — <a href="/investments">details</a></p>{% endif %}
+{% if debt_total %}<p class="small muted">Long-term debt (only the payments count): {{ debt_total | money }} — <a href="/liabilities">details</a></p>{% endif %}
 </div>
 {% endif %}
 

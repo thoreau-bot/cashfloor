@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block body %}
+<h2>Liabilities</h2>
+<p class="muted small">What you owe. A loan's balance is a liability, not a bill: only its <strong>monthly payment</strong> enters the projection, on its due date (or the day its own history shows). Cards are listed for the same reason — the balance is context, the payment is the event.</p>
+
+<h3 style="margin-top:18px">Mortgages &amp; loans</h3>
+<div class="card">
+<table>
+  <tr><th>Institution / account</th><th>Type</th><th class="num">Balance owed</th><th class="num">Monthly payment</th><th>Source</th><th>Next payment</th><th>As of</th></tr>
+  {% for row in loans %}{% set a = row.account %}
+  <tr>
+    <td>{{ a.institution }}<br><span class="small muted">{{ a.display_name }}{% if a.last4 %} ····{{ a.last4 }}{% endif %}</span></td>
+    <td>{{ a.type.value }}</td>
+    <td class="num">{{ (-a.balance if a.balance < 0 else a.balance) | money }}</td>
+    <td class="num">{% if row.payment %}{{ row.payment | money }}{% else %}<span class="warn">unknown</span>{% endif %}</td>
+    <td class="small muted">{{ row.source }}</td>
+    <td>{{ row.next or '' }}</td>
+    <td class="small muted">{{ a.balance_as_of.strftime('%Y-%m-%d') if a.balance_as_of else '' }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="7" class="muted">No loans or mortgages. Set an account's type to <em>loan</em> or <em>mortgage</em> on the Accounts page to list it here.</td></tr>
+  {% endfor %}
+  {% if loans %}<tr><th>Total</th><th></th><th class="num">{{ loans_total | money }}</th><th class="num">{{ loans_payment | money }} / month</th><th></th><th></th><th></th></tr>{% endif %}
+</table>
+</div>
+{% if unknown %}<p class="small warn">{{ unknown }} loan(s) have no usable monthly payment and are left out of the projection. Fill in <em>Min / payment</em> on the Accounts page, link the checking-account payment item under <em>Pays</em> on Scheduled, or run a sync so the loan's own payment history can be read.</p>{% endif %}
+
+<h3 style="margin-top:18px">Credit cards</h3>
+<div class="card">
+<table>
+  <tr><th>Institution / account</th><th class="num">Balance owed</th><th class="num">Statement bal</th><th class="num">Minimum</th><th>Due date</th><th>Pay day</th><th>Projected as</th></tr>
+  {% for row in cards %}{% set a = row.account %}
+  <tr>
+    <td>{{ a.institution }}<br><span class="small muted">{{ a.display_name }}{% if a.last4 %} ····{{ a.last4 }}{% endif %}</span></td>
+    <td class="num">{{ (-a.balance if a.balance < 0 else a.balance) | money }}</td>
+    <td class="num">{{ a.statement_balance | money }}</td>
+    <td class="num">{{ a.minimum_payment | money }}</td>
+    <td>{{ a.due_date or '' }}</td>
+    <td>{{ a.effective_pay_day or '' }}{% if a.pay_day_auto and not a.pay_day %} <span class="small muted">(history)</span>{% endif %}</td>
+    <td class="small muted">{{ row.source }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="7" class="muted">No credit cards.</td></tr>
+  {% endfor %}
+  {% if cards %}<tr><th>Total</th><th class="num">{{ cards_total | money }}</th><th></th><th></th><th></th><th></th><th></th></tr>{% endif %}
+</table>
+</div>
+
+<p class="small muted" style="margin-top:14px">Total owed: <strong>{{ (loans_total + cards_total) | money }}</strong>. None of it is in the cash pool; the dashboard's floor only sees the payments.</p>
+{% endblock %}

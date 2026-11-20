@@ -34,6 +34,7 @@ from dateutil.relativedelta import relativedelta
 from ..config import Config
 from ..db import Database
 from ..models import (
+    LONG_TERM_TYPES,
     Account,
     AccountType,
     Frequency,
@@ -47,7 +48,23 @@ from ..models import (
 from .recurrence import occurrences
 from .recurring import normalize_payee
 
-DUE_TYPES = (AccountType.CREDIT, AccountType.LOAN, AccountType.UTILITY)
+DUE_TYPES = (AccountType.CREDIT, AccountType.LOAN, AccountType.MORTGAGE, AccountType.UTILITY)
+INSTALLMENT_SANITY = 0.25  # an "amount due" above this fraction of a loan's balance is the balance, not a payment
+
+
+def installment(a: Account) -> tuple[int, str] | None:
+    """The per-period payment on a loan or mortgage and where it came from.
+    Never the balance: a statement's 'amount due' that is a large fraction of
+    what's owed is the payoff figure, not the monthly payment."""
+    owed = -a.balance if a.balance < 0 else 0
+    sane = lambda v: v and v > 0 and (owed == 0 or v <= INSTALLMENT_SANITY * owed)  # noqa: E731
+    if sane(a.minimum_payment):
+        return a.minimum_payment, "payment set"  # type: ignore[return-value]
+    if sane(a.statement_balance):
+        return a.statement_balance, "statement"  # type: ignore[return-value]
+    if sane(a.payment_auto):
+        return a.payment_auto, "seen in history"  # type: ignore[return-value]
+    return None
 
 
 def pool_accounts(cfg: Config, accounts: list[Account]) -> list[Account]:
@@ -168,6 +185,7 @@ def build_events(
     horizon_end: date,
     recent_txs: list[Transaction] | None = None,
     aliases: dict[tuple[int, str], str] | None = None,
+    notes: list[str] | None = None,
 ) -> tuple[Events, int]:
     """Return {date: [(amount_cents, label), ...]} and count of unconfirmed items.
     `recent_txs` (the last week or so of postings) lets an occurrence that has
@@ -213,6 +231,39 @@ def build_events(
     if pay_from is not None:
         for a in accounts:
             if a.type not in DUE_TYPES or not a.active or a.id in covered_counter_ids:
+                continue
+            if a.type in LONG_TERM_TYPES:
+                # Installments: a known monthly payment on its due date (or the
+                # day history shows), repeated monthly.  The balance itself is
+                # never an event — it's a liability, not a bill.
+                inst = installment(a)
+                if inst is None:
+                    if notes is not None:
+                        notes.append(f"{a.display_name}: monthly payment unknown — set it on the Accounts page "
+                                     f"(Min / payment) or link the payment item under Pays; not projected")
+                    continue
+                amt, how = inst
+                if a.due_date is not None:
+                    d = a.due_date
+                else:
+                    day = a.effective_pay_day
+                    if day is None:
+                        if notes is not None:
+                            notes.append(f"{a.display_name}: payment day unknown — set Pay day on the Accounts page; "
+                                         f"not projected")
+                        continue
+                    d = as_of.replace(day=min(day, 28))
+                    if d < as_of:
+                        d = d + relativedelta(months=1)
+                guard = 0
+                first = True
+                while d <= horizon_end and guard < 24:
+                    guard += 1
+                    if d >= as_of:
+                        tag = "installment" + ("" if first and a.due_date else ", est.") + f", {how}"
+                        _event(events, d, -amt, f"{a.display_name} payment ({tag})", "account", a.id)
+                    first = False
+                    d = d + relativedelta(months=1)
                 continue
             if a.due_date is None:
                 # No due date known: assume the card is paid in full each month
@@ -280,8 +331,9 @@ def project(db: Database, cfg: Config, as_of: date | None = None) -> ProjectionR
     pool = pool_accounts(cfg, accounts)
     starting = sum((a.spendable if cfg.projection.use_available_balance else a.balance) for a in pool)
     recent = db.list_transactions(since=as_of - timedelta(days=POSTED_LOOKBACK + POSTED_LOOKAHEAD))
-    events, unconfirmed = build_events(cfg, accounts, items, as_of, horizon_end, recent, db.get_payee_aliases())
     warnings: list[str] = []
+    events, unconfirmed = build_events(cfg, accounts, items, as_of, horizon_end, recent, db.get_payee_aliases(),
+                                       warnings)
     for a in pool:
         if a.sync_error:
             warnings.append(f"{a.display_name}: {a.sync_error}")

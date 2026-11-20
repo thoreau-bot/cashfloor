@@ -18,7 +18,8 @@ class AccountType(StrEnum):
     CHECKING = "checking"
     SAVINGS = "savings"
     CREDIT = "credit"
-    LOAN = "loan"
+    LOAN = "loan"  # car, student, personal: fixed installments
+    MORTGAGE = "mortgage"  # home loan / HELOC: fixed installments
     UTILITY = "utility"
     INVESTMENT = "investment"  # 401(k), IRA, brokerage
     HSA = "hsa"  # health savings account: rolls over, may be invested
@@ -27,6 +28,7 @@ class AccountType(StrEnum):
 
 
 INVESTMENT_TYPES = (AccountType.INVESTMENT, AccountType.HSA, AccountType.FSA)
+LONG_TERM_TYPES = (AccountType.LOAN, AccountType.MORTGAGE)  # paid in installments, never "in full"
 HEALTHCARE_TYPES = (AccountType.HSA, AccountType.FSA)
 
 
@@ -106,6 +108,7 @@ class Account:
     active: bool = True
     pay_day: int | None = None  # day of month this card/loan is usually paid (assumed-payoff fallback)
     pay_day_auto: int | None = None  # same, inferred from the card's own payment history; pay_day overrides
+    payment_auto: int | None = None  # cents; usual payment amount seen in the account's own history
 
     @property
     def effective_pay_day(self) -> int | None:

@@ -10,15 +10,17 @@ import re
 import statistics
 from datetime import date, timedelta
 
-from ..models import Account, AccountType, Transaction
+from ..models import LONG_TERM_TYPES, Account, AccountType, Transaction
 
 PAYMENT_RE = re.compile(r"payment|pymt|autopay|auto pay|thank you|epay|e-pay|online pmt|mobile pmt|ach", re.I)
 LOOKBACK_DAYS = 200
 MIN_HITS = 2
 
 
-def infer_pay_day(account: Account, txs: list[Transaction], today: date) -> int | None:
-    if account.type not in (AccountType.CREDIT, AccountType.LOAN):
+def infer_payment(account: Account, txs: list[Transaction], today: date) -> tuple[int, int] | None:
+    """(day of month, usual amount in cents) of the regular payment on a card
+    or loan, from its own feed; None when there isn't enough history."""
+    if account.type not in (AccountType.CREDIT, *LONG_TERM_TYPES):
         return None
     since = today - timedelta(days=LOOKBACK_DAYS)
     pays = [t for t in txs if t.account_id == account.id and t.amount > 0 and not t.pending and t.posted >= since
@@ -32,7 +34,14 @@ def infer_pay_day(account: Account, txs: list[Transaction], today: date) -> int 
         k = (t.posted.year, t.posted.month)
         if k not in by_month or t.amount > by_month[k].amount:
             by_month[k] = t
-    days = sorted(t.posted.day for t in by_month.values())
-    if len(days) < MIN_HITS:
+    regular = list(by_month.values())
+    if len(regular) < MIN_HITS:
         return None
-    return max(1, min(28, int(statistics.median(days))))
+    day = max(1, min(28, int(statistics.median(t.posted.day for t in regular))))
+    amount = int(statistics.median(t.amount for t in regular[-6:]))
+    return day, amount
+
+
+def infer_pay_day(account: Account, txs: list[Transaction], today: date) -> int | None:
+    r = infer_payment(account, txs, today)
+    return r[0] if r else None

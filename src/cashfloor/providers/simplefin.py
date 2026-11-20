@@ -77,7 +77,9 @@ def guess_account_type(name: str, balance: Decimal, has_holdings: bool = False) 
         return AccountType.SAVINGS
     if any(k in n for k in ("check", "chk", "spending", "everyday")):
         return AccountType.CHECKING
-    if any(k in n for k in ("loan", "mortgage", "auto", "student")):
+    if re.search(r"mortgage|home loan|heloc|home equity", n):
+        return AccountType.MORTGAGE
+    if any(k in n for k in ("loan", "auto", "student")):
         return AccountType.LOAN
     if balance < 0:
         return AccountType.CREDIT

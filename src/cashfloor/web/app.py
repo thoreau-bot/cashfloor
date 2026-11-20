@@ -16,6 +16,7 @@ from ..config import GUI_SETTINGS, Config, apply_overrides
 from ..db import Database
 from ..models import (
     INVESTMENT_TYPES,
+    LONG_TERM_TYPES,
     AccountType,
     Frequency,
     ItemSource,
@@ -143,6 +144,7 @@ def create_app(cfg: Config, with_scheduler: bool = False) -> FastAPI:
             syncs = d.last_syncs(8)
             connections = d.list_connections()
             invest_total = sum(a.balance for a in accounts if a.type in INVESTMENT_TYPES)
+            debt_total = sum(-a.balance for a in accounts if a.type in LONG_TERM_TYPES and a.balance < 0)
         finally:
             d.close()
         data = r.to_dict()
@@ -159,7 +161,8 @@ def create_app(cfg: Config, with_scheduler: bool = False) -> FastAPI:
         return templates.TemplateResponse(request, "dashboard.html", {
             "p": data, "chart": svg_chart(data["days"], data["safety_buffer"]), "accounts": accounts,
             "pending": pending, "upcoming": upcoming, "syncs": syncs, "cfg": c, "setup_hints": setup_hints,
-            "connections": connections, "invest_total": invest_total, "recently_paid": recently_paid,
+            "connections": connections, "invest_total": invest_total, "debt_total": debt_total,
+            "recently_paid": recently_paid,
         })
 
     @app.post("/paid")
@@ -453,6 +456,52 @@ def create_app(cfg: Config, with_scheduler: bool = False) -> FastAPI:
         body = chosen.read_text() if chosen else ""
         return templates.TemplateResponse(request, "raw.html", {
             "files": [f.name for f in files[:30]], "chosen": chosen.name if chosen else "", "body": body,
+        })
+
+    @app.get("/liabilities", response_class=HTMLResponse)
+    def liabilities(request: Request):
+        from ..models import LONG_TERM_TYPES
+        from ..projection.engine import installment
+
+        d = db()
+        try:
+            c = effective(d)
+            accounts = [a for a in d.list_accounts(active_only=False) if a.active]
+            items = d.list_items()
+        finally:
+            d.close()
+        linked = {i.counter_account_id: i for i in items if i.counter_account_id and i.confirmed and i.active}
+        loans, cards, unknown = [], [], 0
+        for a in accounts:
+            if a.type in LONG_TERM_TYPES:
+                if a.id in linked:
+                    it = linked[a.id]
+                    loans.append({"account": a, "payment": -it.amount, "source": f"scheduled item '{it.name}'",
+                                  "next": it.next_date})
+                    continue
+                inst = installment(a)
+                if inst is None:
+                    unknown += 1
+                    loans.append({"account": a, "payment": None, "source": "—", "next": a.due_date})
+                    continue
+                amt, how = inst
+                nxt = a.due_date or (a.effective_pay_day and f"day {a.effective_pay_day} monthly")
+                loans.append({"account": a, "payment": amt, "source": how, "next": nxt})
+            elif a.type == AccountType.CREDIT:
+                if a.id in linked:
+                    src = f"scheduled item '{linked[a.id].name}'"
+                elif a.due_date:
+                    src = "statement balance on due date" if c.projection.card_payment_mode != "minimum" else "minimum on due date"
+                elif c.projection.assume_card_payoff and a.balance < 0:
+                    src = "assumed payoff on pay day"
+                else:
+                    src = "not projected"
+                cards.append({"account": a, "source": src})
+        return templates.TemplateResponse(request, "liabilities.html", {
+            "loans": loans, "cards": cards, "unknown": unknown,
+            "loans_total": sum(-r["account"].balance for r in loans if r["account"].balance < 0),
+            "loans_payment": sum(r["payment"] or 0 for r in loans),
+            "cards_total": sum(-r["account"].balance for r in cards if r["account"].balance < 0),
         })
 
     @app.get("/holdings", include_in_schema=False)

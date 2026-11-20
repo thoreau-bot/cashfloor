@@ -413,3 +413,46 @@ def test_pay_day_inferred_from_card_payment_history(tmp_path):
     db.set_account_user_fields(card.id, pay_day=5)
     res = project(db, cfg, as_of=today)
     assert [d.day for d in res.days for e in d.events if "assumed payoff" in e][0] == date(2026, 12, 5)
+
+
+def test_mortgage_balance_is_never_an_event(tmp_path):
+    """A mortgage connected with its whole balance and a statement whose
+    'amount due' was parsed as the balance: the projection must subtract the
+    monthly installment, not the loan, and not three times."""
+    db = _db(tmp_path)
+    today = date(2026, 11, 19)
+    _checking(db, bal=6000_00)
+    m = db.upsert_account(Account(id=None, provider="simplefin", external_id="m", name="HOME MORTGAGE",
+                                  institution="Woodgrove Bank", type=AccountType.MORTGAGE, balance=-285_000_00,
+                                  statement_balance=285_000_00, due_date=date(2026, 12, 1),
+                                  balance_as_of=datetime.now(), last_synced=datetime.now()))
+    res = project(db, _cfg(horizon_days=90), as_of=today)
+    assert res.floor == 6000_00  # nothing sane known -> not projected, but warned
+    assert any("monthly payment unknown" in w for w in res.warnings)
+    # a real payment figure (min / payment field) -> one installment per month on the due date
+    db.set_account_due(m.id, due_date=date(2026, 12, 1), statement_balance=285_000_00, minimum_payment=1_850_00)
+    res = project(db, _cfg(horizon_days=90), as_of=today)
+    hits = [(d.day, e) for d in res.days for e in d.events if "MORTGAGE" in e.upper()]
+    assert [h[0] for h in hits] == [date(2026, 12, 1), date(2027, 1, 1), date(2027, 2, 1)]
+    assert res.floor == 6000_00 - 3 * 1_850_00 and "installment" in hits[0][1]
+
+
+def test_loan_payment_inferred_from_history(tmp_path):
+    from cashfloor.models import Transaction
+    from cashfloor.projection.payday import infer_payment
+
+    db = _db(tmp_path)
+    today = date(2026, 11, 19)
+    car = db.upsert_account(Account(id=None, provider="simplefin", external_id="c", name="AUTO LOAN",
+                                    institution="Woodgrove Bank", type=AccountType.LOAN, balance=-18_400_00,
+                                    balance_as_of=datetime.now(), last_synced=datetime.now()))
+    txs = [Transaction(None, car.id, f"p{m}", date(2026, m, 12), 412_33, "PAYMENT - THANK YOU") for m in range(6, 11)]
+    txs.append(Transaction(None, car.id, "x", date(2026, 8, 20), 100_00, "ONLINE PAYMENT"))  # extra one
+    db.upsert_transactions(txs)
+    assert infer_payment(car, txs, today) == (12, 412_33)
+    db.set_payment_auto(car.id, 12, 412_33)
+    _checking(db, bal=5000_00)
+    res = project(db, _cfg(horizon_days=60), as_of=today)
+    hits = [(d.day, e) for d in res.days for e in d.events if "AUTO LOAN" in e.upper()]
+    assert [h[0] for h in hits] == [date(2026, 12, 12), date(2027, 1, 12)] and "seen in history" in hits[0][1]
+    assert res.floor == 5000_00 - 2 * 412_33

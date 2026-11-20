@@ -193,7 +193,7 @@ class Database:
     # Columns added after v1; applied to existing databases on open.
     _ADDED_COLUMNS = {
         "accounts": [("conn_id", "TEXT"), ("extra", "TEXT"), ("sync_error", "TEXT"), ("pay_day", "INTEGER"),
-                     ("pay_day_auto", "INTEGER")],
+                     ("pay_day_auto", "INTEGER"), ("payment_auto", "INTEGER")],
         "transactions": [("extra", "TEXT")],
         "statements": [("title", "TEXT")],
     }
@@ -210,6 +210,7 @@ class Database:
             (str(SCHEMA_VERSION),),
         )
         self._one_time("retype_hsa_fsa", self._retype_hsa_fsa)
+        self._one_time("retype_mortgage", self._retype_mortgage)
         self.conn.commit()
 
     def _one_time(self, name: str, fn) -> None:
@@ -217,6 +218,12 @@ class Database:
             return
         fn()
         self.conn.execute("INSERT INTO meta(key, value) VALUES (?, '1')", (f"migrated:{name}",))
+
+    def _retype_mortgage(self) -> None:
+        """0.2.0 added the mortgage type; loans named like one are re-typed once."""
+        for r in self.conn.execute("SELECT id, name, nickname FROM accounts WHERE type='loan'").fetchall():
+            if re.search(r"mortgage|home loan|heloc|home equity", f"{r['name']} {r['nickname'] or ''}".lower()):
+                self.conn.execute("UPDATE accounts SET type='mortgage' WHERE id=?", (r["id"],))
 
     def _retype_hsa_fsa(self) -> None:
         """0.2.0 added hsa/fsa types; accounts guessed as 'investment' before
@@ -295,6 +302,7 @@ class Database:
             conn_id=r["conn_id"],
             pay_day=r["pay_day"],
             pay_day_auto=r["pay_day_auto"],
+            payment_auto=r["payment_auto"],
             extra=json.loads(r["extra"]) if r["extra"] else None,
             sync_error=r["sync_error"],
         )
@@ -600,9 +608,9 @@ class Database:
                 )
         return it
 
-    def set_pay_day_auto(self, account_id: int, day: int | None) -> None:
+    def set_payment_auto(self, account_id: int, day: int | None, amount: int | None) -> None:
         with self.tx() as c:
-            c.execute("UPDATE accounts SET pay_day_auto=? WHERE id=?", (day, account_id))
+            c.execute("UPDATE accounts SET pay_day_auto=?, payment_auto=? WHERE id=?", (day, amount, account_id))
 
     def set_manual_balance(self, account_id: int, balance: int) -> None:
         with self.tx() as c:

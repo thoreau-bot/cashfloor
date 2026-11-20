@@ -1,10 +1,10 @@
 {% extends "base.html" %}
 {% block body %}
 <h2>Accounts</h2>
-<p class="muted small">Give each account a short <em>key</em> (used in config and archive folder names), a type, and tick <em>pool</em> for the accounts you actually spend from. <em>Last 4</em> is how downloaded statements get matched to an account (SimpleFIN doesn't supply it). For cards/loans/utilities you can also set the next due date by hand if no statement has been parsed yet. <em>Pay day</em> is the day of month a card with no known due date is assumed to be paid in full (see Settings → assume card payoff); a greyed number is what sync learned from the card's own payment history, and anything you type overrides it.</p>
+<p class="muted small">Give each account a short <em>key</em> (used in config and archive folder names), a type, and tick <em>pool</em> for the accounts you actually spend from. <em>Last 4</em> is how downloaded statements get matched to an account (SimpleFIN doesn't supply it). For cards/loans/utilities you can also set the next due date by hand if no statement has been parsed yet. For a <em>loan</em> or <em>mortgage</em>, <em>Min / payment</em> is the monthly installment — the only figure of theirs that enters the projection (a greyed value is what sync saw in the loan's own payment history). <em>Pay day</em> is the day of month a card with no known due date is assumed to be paid in full (see Settings → assume card payoff); a greyed number is what sync learned from the card's own payment history, and anything you type overrides it.</p>
 <div class="card">
 <table>
-  <tr><th>Institution / name</th><th>Key</th><th>Nickname</th><th>Last 4</th><th>Type</th><th>Pool</th><th>Active</th><th class="num">Balance</th><th>Due date</th><th>Stmt bal</th><th>Min</th><th>Pay day</th><th></th></tr>
+  <tr><th>Institution / name</th><th>Key</th><th>Nickname</th><th>Last 4</th><th>Type</th><th>Pool</th><th>Active</th><th class="num">Balance</th><th>Due date</th><th>Stmt bal</th><th>Min / payment</th><th>Pay day</th><th></th></tr>
   {% for a in accounts %}
   <tr>
     <form method="post" action="/accounts/{{ a.id }}">
@@ -18,7 +18,7 @@
     <td class="num">{% if a.provider == 'manual' %}<input name="balance" value="{{ a.balance | money }}" size="9" class="num">{% else %}{{ a.balance | money }}{% endif %}</td>
     <td><input type="date" name="due_date" value="{{ a.due_date or '' }}"></td>
     <td><input name="statement_balance" value="{{ a.statement_balance | money }}" size="8"></td>
-    <td><input name="minimum_payment" value="{{ a.minimum_payment | money }}" size="6"></td>
+    <td><input name="minimum_payment" value="{{ a.minimum_payment | money }}" size="6" placeholder="{{ a.payment_auto | money if a.payment_auto else '' }}" title="{% if a.payment_auto %}usual payment seen in history: {{ a.payment_auto | money }}{% endif %}"></td>
     <td><input name="pay_day" value="{{ a.pay_day or '' }}" size="2" maxlength="2" placeholder="{{ a.pay_day_auto or '' }}" title="{% if a.pay_day_auto %}seen in payment history: day {{ a.pay_day_auto }} — type a day to override{% else %}day of month this card is usually paid{% endif %}"></td>
     <td><button>Save</button></td>
     </form>
