@@ -85,6 +85,12 @@
     <td class="small muted">{{ base['projection.default_card_pay_day'] }}</td>
   </tr>
   <tr>
+    <td>Max assumed payoff</td>
+    <td><input name="projection.max_assumed_payoff" value="{{ current['projection.max_assumed_payoff'] }}" size="8"></td>
+    <td class="small muted">{{ help['projection.max_assumed_payoff'] }}</td>
+    <td class="small muted">{{ base['projection.max_assumed_payoff'] }}</td>
+  </tr>
+  <tr>
     <td>Inflows due today already landed</td>
     <td><input type="checkbox" name="projection.assume_inflows_landed" value="true" {{ 'checked' if current['projection.assume_inflows_landed'] }}></td>
     <td class="small muted">{{ help['projection.assume_inflows_landed'] }}</td>

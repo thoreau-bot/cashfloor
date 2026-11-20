@@ -63,8 +63,13 @@ def claim_access_url(setup_token: str, timeout: float = 30.0) -> str:
     return access_url
 
 
-def guess_account_type(name: str, balance: Decimal, has_holdings: bool = False) -> AccountType:
+def guess_account_type(name: str, balance: Decimal, has_holdings: bool = False, institution: str = "") -> AccountType:
+    """Type from the account name, falling back to the institution's name: a
+    servicer called '<X> Mortgage' labels its accounts 'Account (1234)'."""
     n = name.lower()
+    inst = (institution or "").lower()
+    if re.search(r"mortgage|home loan|heloc|home equity", n) or re.search(r"mortgage", inst):
+        return AccountType.MORTGAGE
     if re.search(r"\bfsa\b|flexible spending|flex spending|dependent care", n):
         return AccountType.FSA
     if re.search(r"\bhsa\b|health savings", n):
@@ -77,9 +82,7 @@ def guess_account_type(name: str, balance: Decimal, has_holdings: bool = False) 
         return AccountType.SAVINGS
     if any(k in n for k in ("check", "chk", "spending", "everyday")):
         return AccountType.CHECKING
-    if re.search(r"mortgage|home loan|heloc|home equity", n):
-        return AccountType.MORTGAGE
-    if any(k in n for k in ("loan", "auto", "student")):
+    if any(k in n for k in ("loan", "auto", "student")) or re.search(r"auto finance|student loan|loan servic", inst):
         return AccountType.LOAN
     if balance < 0:
         return AccountType.CREDIT
@@ -158,7 +161,7 @@ def parse_accounts_payload(payload: dict, provider_name: str, as_of: datetime | 
             external_id=a["id"],
             name=name,
             institution=institution,
-            type=guess_account_type(name, bal, bool(raw_holdings)),
+            type=guess_account_type(name, bal, bool(raw_holdings), institution),
             currency=a.get("currency", "USD"),
             balance=to_cents(bal),
             available=_cents(a.get("available-balance")),

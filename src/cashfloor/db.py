@@ -210,7 +210,7 @@ class Database:
             (str(SCHEMA_VERSION),),
         )
         self._one_time("retype_hsa_fsa", self._retype_hsa_fsa)
-        self._one_time("retype_mortgage", self._retype_mortgage)
+        self._one_time("retype_mortgage2", self._retype_mortgage)
         self.conn.commit()
 
     def _one_time(self, name: str, fn) -> None:
@@ -220,9 +220,17 @@ class Database:
         self.conn.execute("INSERT INTO meta(key, value) VALUES (?, '1')", (f"migrated:{name}",))
 
     def _retype_mortgage(self) -> None:
-        """0.2.0 added the mortgage type; loans named like one are re-typed once."""
-        for r in self.conn.execute("SELECT id, name, nickname FROM accounts WHERE type='loan'").fetchall():
-            if re.search(r"mortgage|home loan|heloc|home equity", f"{r['name']} {r['nickname'] or ''}".lower()):
+        """0.2.0 added the mortgage type.  Accounts the old guesser filed as
+        loan/credit/other whose own name — or whose institution's name — says
+        mortgage are re-typed once.  Types set by hand on the Accounts page
+        look the same in the DB, so this runs only once per install."""
+        rows = self.conn.execute(
+            "SELECT id, name, nickname, institution FROM accounts WHERE type IN ('loan','credit','other')"
+        ).fetchall()
+        for r in rows:
+            text = f"{r['name']} {r['nickname'] or ''}".lower()
+            inst = (r["institution"] or "").lower()
+            if re.search(r"mortgage|home loan|heloc|home equity", text) or "mortgage" in inst:
                 self.conn.execute("UPDATE accounts SET type='mortgage' WHERE id=?", (r["id"],))
 
     def _retype_hsa_fsa(self) -> None:

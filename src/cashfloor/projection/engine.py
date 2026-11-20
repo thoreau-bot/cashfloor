@@ -273,6 +273,11 @@ def build_events(
                 owed = -a.balance if a.balance < 0 else 0
                 if owed <= 0:
                     continue
+                if owed > to_cents(cfg.projection.max_assumed_payoff):
+                    if notes is not None:
+                        notes.append(f"{a.display_name}: owes {owed/100:,.2f}, too much to assume a monthly payoff — "
+                                     f"if it's a loan or mortgage set its type on the Accounts page; not projected")
+                    continue
                 day = a.effective_pay_day or cfg.projection.default_card_pay_day
                 d = as_of.replace(day=min(day, 28))
                 if d < as_of:

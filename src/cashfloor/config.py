@@ -42,6 +42,9 @@ class ProjectionConfig(BaseModel):
     assume_card_payoff: bool = True
     # Day of month for that assumed payoff when the account has no pay_day of its own.
     default_card_pay_day: int = 1
+    # Never assume a payoff bigger than this; a "card" owing more is almost certainly a
+    # mis-typed loan, and the dashboard says so instead of subtracting it.
+    max_assumed_payoff: float = 25000.0
     # An inflow due today (or earlier) with no posting yet is taken as already in
     # today's balance: direct deposits land overnight, and banks hand out the new
     # balance hours before they list the transaction.  Outflows are never assumed.
@@ -151,6 +154,7 @@ GUI_SETTINGS: dict[str, str] = {
     "projection.stale_after_days": "Warn when a pool account's balance is older than this many days",
     "projection.assume_card_payoff": "Cards with no due date and no linked payment are assumed paid in full monthly",
     "projection.default_card_pay_day": "Day of month for assumed card payoffs (per-account pay day overrides)",
+    "projection.max_assumed_payoff": "Largest balance a card is assumed to pay off monthly; above it, warn instead",
     "projection.assume_inflows_landed": "An inflow due today with no posting yet counts as already in the balance",
     "projection.fsa_warn_days": "Days before Dec 31 to start warning about unspent FSA money",
     "general.keep_raw_responses": "Keep raw provider JSON under data/raw/ for inspection",

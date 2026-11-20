@@ -456,3 +456,28 @@ def test_loan_payment_inferred_from_history(tmp_path):
     hits = [(d.day, e) for d in res.days for e in d.events if "AUTO LOAN" in e.upper()]
     assert [h[0] for h in hits] == [date(2026, 12, 12), date(2027, 1, 12)] and "seen in history" in hits[0][1]
     assert res.floor == 5000_00 - 2 * 412_33
+
+
+def test_mortgage_filed_as_credit_is_retyped_and_never_assumed_paid_off(tmp_path):
+    """Kendall's servicer: institution '<X> Mortgage', accounts named
+    'Account (1234)', guessed as credit -> whole balance 'assumed payoff'."""
+    from decimal import Decimal
+
+    from cashfloor.providers.simplefin import guess_account_type
+
+    assert guess_account_type("Account (1234)", Decimal("-531482.63"), institution="Contoso Mortgage") == AccountType.MORTGAGE
+    db = _db(tmp_path)
+    today = date(2026, 11, 19)
+    _checking(db, bal=6000_00)
+    a = db.upsert_account(Account(id=None, provider="simplefin", external_id="m1", name="Account (1234)",
+                                  institution="Contoso Mortgage", type=AccountType.CREDIT, balance=-563_900_00,
+                                  balance_as_of=datetime.now(), last_synced=datetime.now()))
+    # even before the retype, the cap stops the absurd payoff and explains itself
+    res = project(db, _cfg(), as_of=today)
+    assert res.floor == 6000_00 and any("too much to assume" in w for w in res.warnings)
+    db.conn.execute("DELETE FROM meta WHERE key='migrated:retype_mortgage2'")
+    db.conn.commit()
+    db.migrate()
+    assert db.get_account(a.id).type == AccountType.MORTGAGE
+    res = project(db, _cfg(), as_of=today)
+    assert res.floor == 6000_00 and any("monthly payment unknown" in w for w in res.warnings)
