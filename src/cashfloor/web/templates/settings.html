@@ -85,6 +85,12 @@
     <td class="small muted">{{ base['projection.default_card_pay_day'] }}</td>
   </tr>
   <tr>
+    <td>Later card payments</td>
+    <td><select name="projection.later_card_payments">{% for m in ['history','minimum','spend','repeat'] %}<option value="{{ m }}" {{ 'selected' if current['projection.later_card_payments'] == m }}>{{ m }}</option>{% endfor %}</select></td>
+    <td class="small muted">{{ help['projection.later_card_payments'] }}</td>
+    <td class="small muted">{{ base['projection.later_card_payments'] }}</td>
+  </tr>
+  <tr>
     <td>Max assumed payoff</td>
     <td><input name="projection.max_assumed_payoff" value="{{ current['projection.max_assumed_payoff'] }}" size="8"></td>
     <td class="small muted">{{ help['projection.max_assumed_payoff'] }}</td>

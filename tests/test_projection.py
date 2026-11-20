@@ -39,10 +39,12 @@ def test_projection_floor_and_discretionary(db, cfg, accounts):
     assert r.floor == 130_000
     assert r.floor_date == date(2026, 11, 1)
     assert r.discretionary == 130_000 - 50_000
-    # card due event present on Nov 15 and estimated again Dec 15
+    # card due event present on Nov 15; Dec 15 is estimated at the issuer's minimum (the
+    # statement balance is cleared by the November payment, so repeating it would overstate)
     by_day = {d.day: d for d in r.days}
     assert by_day[date(2026, 11, 15)].outflows == -60_000
-    assert any("(est.)" in e for e in by_day[date(2026, 12, 15)].events)
+    assert any("est. minimum" in e for e in by_day[date(2026, 12, 15)].events)
+    assert by_day[date(2026, 12, 15)].outflows == -3_500
 
 
 def test_unconfirmed_items_excluded(db, cfg, accounts):

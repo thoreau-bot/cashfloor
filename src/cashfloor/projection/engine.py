@@ -52,6 +52,27 @@ DUE_TYPES = (AccountType.CREDIT, AccountType.LOAN, AccountType.MORTGAGE, Account
 INSTALLMENT_SANITY = 0.25  # an "amount due" above this fraction of a loan's balance is the balance, not a payment
 
 
+def later_card_payment(cfg: Config, a: Account, first_amount: int) -> tuple[int, str]:
+    """What a card pays in the months after its next payment.  The next
+    payment clears whatever is owed now; after that the card only owes what
+    gets charged, so repeating today's (possibly unusual) balance every month
+    overstates the outflow.  Order of preference per `later_card_payments`."""
+    mode = cfg.projection.later_card_payments
+    hist = a.payment_auto if a.payment_auto and a.payment_auto > 0 else None
+    minimum = a.minimum_payment if a.minimum_payment and a.minimum_payment > 0 else None
+    spend = a.spend_auto if a.spend_auto and a.spend_auto > 0 else None
+    order = {
+        "history": [(hist, "usual payment"), (minimum, "minimum"), (spend, "usual spend")],
+        "minimum": [(minimum, "minimum"), (hist, "usual payment"), (spend, "usual spend")],
+        "spend": [(spend, "usual spend"), (hist, "usual payment"), (minimum, "minimum")],
+        "repeat": [],
+    }.get(mode, [])
+    for amt, how in order:
+        if amt:
+            return min(amt, first_amount) if how != "usual spend" else amt, how
+    return first_amount, "repeat"
+
+
 def installment(a: Account) -> tuple[int, str] | None:
     """The per-period payment on a loan or mortgage and where it came from.
     Never the balance: a statement's 'amount due' that is a large fraction of
@@ -282,13 +303,19 @@ def build_events(
                 d = as_of.replace(day=min(day, 28))
                 if d < as_of:
                     d = d + relativedelta(months=1)
+                how = "usual day" if a.pay_day else "day seen in history" if a.pay_day_auto else "default day"
+                later, later_how = later_card_payment(cfg, a, owed)
                 guard = 0
+                first = True
                 while d <= horizon_end and guard < 24:
                     guard += 1
-                    how = "usual day" if a.pay_day else "day seen in history" if a.pay_day_auto else "default day"
-                    _event(events, d, -owed, f"{a.display_name} payment (assumed payoff, {how})", "account", a.id)
+                    if first:
+                        _event(events, d, -owed, f"{a.display_name} payment (assumed payoff, {how})", "account", a.id)
+                    else:
+                        _event(events, d, -later, f"{a.display_name} payment (est. {later_how})", "account", a.id)
                     if not cfg.projection.estimate_future_card_payments:
                         break
+                    first = False
                     d = d + relativedelta(months=1)
                 continue
             amt = a.minimum_payment if cfg.projection.card_payment_mode == "minimum" else a.statement_balance
@@ -297,13 +324,17 @@ def build_events(
             if not amt or amt <= 0:
                 continue
             d = a.due_date
+            later, later_how = (amt, "repeat") if a.type != AccountType.CREDIT else later_card_payment(cfg, a, amt)
             first = True
             guard = 0
             while d <= horizon_end and guard < 24:
                 guard += 1
                 if d >= as_of:
-                    label = f"{a.display_name} payment" + ("" if first else " (est.)")
-                    _event(events, d, -amt, label, "account", a.id)
+                    if first:
+                        _event(events, d, -amt, f"{a.display_name} payment", "account", a.id)
+                    else:
+                        tag = " (est.)" if later_how == "repeat" else f" (est. {later_how})"
+                        _event(events, d, -later, f"{a.display_name} payment{tag}", "account", a.id)
                 if not cfg.projection.estimate_future_card_payments:
                     break
                 first = False

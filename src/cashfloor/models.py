@@ -109,6 +109,7 @@ class Account:
     pay_day: int | None = None  # day of month this card/loan is usually paid (assumed-payoff fallback)
     pay_day_auto: int | None = None  # same, inferred from the card's own payment history; pay_day overrides
     payment_auto: int | None = None  # cents; usual payment amount seen in the account's own history
+    spend_auto: int | None = None  # cents; usual monthly charges on a card, from its own history
 
     @property
     def effective_pay_day(self) -> int | None:

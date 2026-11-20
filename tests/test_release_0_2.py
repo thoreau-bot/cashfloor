@@ -481,3 +481,36 @@ def test_mortgage_filed_as_credit_is_retyped_and_never_assumed_paid_off(tmp_path
     assert db.get_account(a.id).type == AccountType.MORTGAGE
     res = project(db, _cfg(), as_of=today)
     assert res.floor == 6000_00 and any("monthly payment unknown" in w for w in res.warnings)
+
+
+def test_later_card_payments_do_not_repeat_an_unusual_balance(tmp_path):
+    """Balance is temporarily high; next month's payment clears it, after
+    that the card pays its usual amount, not the high balance again."""
+    from cashfloor.models import Transaction
+    from cashfloor.projection.payday import infer_spend
+
+    db = _db(tmp_path)
+    today = date(2026, 11, 19)
+    _checking(db, bal=10_000_00)
+    card = _card(db, balance=-1_938_97)  # unusually high
+    db.set_payment_auto(card.id, 2, 65_00)  # has been paying ~$65 (minimums) lately
+    res = project(db, _cfg(horizon_days=90), as_of=today)
+    hits = [(d.day, e) for d in res.days for e in d.events if "Platinum" in e]
+    assert hits[0][0] == date(2026, 12, 2) and "-1,938.97" in hits[0][1] and "assumed payoff" in hits[0][1]
+    assert "-65.00" in hits[1][1] and "usual payment" in hits[1][1]
+    assert "-65.00" in hits[2][1]
+    assert res.floor == 10_000_00 - 1_938_97 - 2 * 65_00
+    # "repeat" restores the old behaviour; "minimum" prefers the issuer's figure
+    res = project(db, _cfg(horizon_days=90, later_card_payments="repeat"), as_of=today)
+    assert res.floor == 10_000_00 - 3 * 1_938_97
+    db.set_account_due(card.id, due_date=date(2026, 12, 2), statement_balance=1_938_97, minimum_payment=40_00)
+    res = project(db, _cfg(horizon_days=90, later_card_payments="minimum"), as_of=today)
+    hits = [e for d in res.days for e in d.events if "Platinum" in e]
+    assert "-1,938.97" in hits[0] and "-40.00" in hits[1] and "minimum" in hits[1]
+    # usual spend from the card's own charges
+    txs = []
+    for m in range(5, 11):
+        txs += [Transaction(None, card.id, f"a{m}", date(2026, m, 4), -120_00, "GROCERY MART"),
+                Transaction(None, card.id, f"b{m}", date(2026, m, 18), -80_00, "FUEL STOP")]
+    db.upsert_transactions(txs)
+    assert infer_spend(card, txs, today) == 200_00

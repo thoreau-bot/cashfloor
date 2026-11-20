@@ -45,3 +45,25 @@ def infer_payment(account: Account, txs: list[Transaction], today: date) -> tupl
 def infer_pay_day(account: Account, txs: list[Transaction], today: date) -> int | None:
     r = infer_payment(account, txs, today)
     return r[0] if r else None
+
+
+def infer_spend(account: Account, txs: list[Transaction], today: date) -> int | None:
+    """Usual monthly charges on a card (cents): median of the monthly sums of
+    its negative postings over the last six complete months with activity.
+    This is what paying in full would cost each month."""
+    if account.type != AccountType.CREDIT:
+        return None
+    since = today - timedelta(days=LOOKBACK_DAYS)
+    this_month = (today.year, today.month)
+    by_month: dict[tuple[int, int], int] = {}
+    for t in txs:
+        if t.account_id != account.id or t.amount >= 0 or t.pending or t.posted < since:
+            continue
+        k = (t.posted.year, t.posted.month)
+        if k == this_month:
+            continue  # incomplete
+        by_month[k] = by_month.get(k, 0) + (-t.amount)
+    sums = [v for _k, v in sorted(by_month.items())][-6:]
+    if len(sums) < MIN_HITS:
+        return None
+    return int(statistics.median(sums))

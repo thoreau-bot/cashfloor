@@ -42,6 +42,12 @@ class ProjectionConfig(BaseModel):
     assume_card_payoff: bool = True
     # Day of month for that assumed payoff when the account has no pay_day of its own.
     default_card_pay_day: int = 1
+    # What a card pays in the months AFTER its next payment: "history" = the usual
+    # payment seen in the card's feed (else the minimum, else usual spend);
+    # "minimum" = the issuer's minimum (else usual payment); "spend" = what is
+    # usually charged per month (what paying in full would cost); "repeat" = the
+    # next payment's amount again (old behaviour; wrong when a balance is unusually high).
+    later_card_payments: str = "history"
     # Never assume a payoff bigger than this; a "card" owing more is almost certainly a
     # mis-typed loan, and the dashboard says so instead of subtracting it.
     max_assumed_payoff: float = 5000.0
@@ -154,6 +160,7 @@ GUI_SETTINGS: dict[str, str] = {
     "projection.stale_after_days": "Warn when a pool account's balance is older than this many days",
     "projection.assume_card_payoff": "Cards with no due date and no linked payment are assumed paid in full monthly",
     "projection.default_card_pay_day": "Day of month for assumed card payoffs (per-account pay day overrides)",
+    "projection.later_card_payments": "Months after the next card payment: history | minimum | spend | repeat",
     "projection.max_assumed_payoff": "Largest balance a card is assumed to pay off monthly; above it, warn instead",
     "projection.assume_inflows_landed": "An inflow due today with no posting yet counts as already in the balance",
     "projection.fsa_warn_days": "Days before Dec 31 to start warning about unspent FSA money",

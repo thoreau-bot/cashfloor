@@ -217,6 +217,7 @@ def create_app(cfg: Config, with_scheduler: bool = False) -> FastAPI:
             "projection.default_card_pay_day": cfg.projection.default_card_pay_day,
             "projection.assume_inflows_landed": cfg.projection.assume_inflows_landed,
             "projection.max_assumed_payoff": cfg.projection.max_assumed_payoff,
+            "projection.later_card_payments": cfg.projection.later_card_payments,
         }
         current = {
             "projection.horizon_days": c.projection.horizon_days,
@@ -237,6 +238,7 @@ def create_app(cfg: Config, with_scheduler: bool = False) -> FastAPI:
             "projection.default_card_pay_day": c.projection.default_card_pay_day,
             "projection.assume_inflows_landed": c.projection.assume_inflows_landed,
             "projection.max_assumed_payoff": c.projection.max_assumed_payoff,
+            "projection.later_card_payments": c.projection.later_card_payments,
         }
         raw_dir = cfg.general.data_dir / "raw"
         raw_files = sorted(raw_dir.glob("*.json"), reverse=True)[:10] if raw_dir.exists() else []
